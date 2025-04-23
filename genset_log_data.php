@@ -46,16 +46,16 @@ if ($type === 'active_energy') {
 
 // Tag Groups - no change needed here
 $tagGroups = [
-    "voltage" => ["VOLTAGE_LINE_1_V", "VOLTAGE_LINE_2_V", "VOLTAGE_LINE_3_V", "VOLTAGE_L_N_AVG_V", "VOLTAGE_LINE_1_2_V", "VOLTAGE_LINE_2_3_V", "VOLTAGE_LINE_3_1_V", "VOLTAGE_L_L_AVG_V"],
-    "current" => ["CURRENT_LINE_1_A", "CURRENT_LINE_2_A", "CURRENT_LINE_3_A", "CURRENT_AVG_A"],
+    "voltage" => [ "VOLTAGE_LINE_1_2_V", "VOLTAGE_LINE_2_3_V"],
+    "current" => [ "CURRENT_LINE_3_A", "CURRENT_TOTAL_A"],
     "power_factor" => ["POWER_FACTOR_PF1", "POWER_FACTOR_PF2", "POWER_FACTOR_PF3", "POWER_FACTOR_TOTAL"],
     "active_power" => ["ACTIVE_POWER_P1_KW","ACTIVE_POWER_P2_KW","ACTIVE_POWER_P3_KW","ACTIVE_POWER_TOTAL_KW"],
     "reactive_power"  =>["REACTIVE_POWER_Q1_KVAR","REACTIVE_POWER_Q2_KVAR","REACTIVE_POWER_Q3_KVAR","REACTIVE_POWER_TOTAL_KVAR"],
     "apparent_power"  =>["APPARENT_POWER_S1_KVA","APPARENT_POWER_S2_KVA","APPARENT_POWER_S3_KVA", "APPARENT_POWER_TOTAL_KVA"],
     "harmonics"  =>["HARMONICS_I1_THD", "HARMONICS_I2_THD","HARMONICS_I3_THD","HARMONICS_V1_THD","HARMONICS_V2_THD", "HARMONICS_V3_THD"],
-    "active_energy" =>["ACTIVE_ENERGY_IMPORT_KWH", "ACTIVE_ENERGY_EXPORT_KWH"],
+    "active_energy" =>["SIGNED_REAL_ENERGY_CONSUMPTION_KWH"],
     "reactive_energy"  => [ "REACTIVE_ENERGY_IMPORT_KVARH", "REACTIVE_ENERGY_EXPORT_KVARH"],
-    "apparent_energy"=>["APPARENT_ENERGY_KVAH"] 
+    "apparent_energy"=>[ "APPARENT_ENERGY_CONSUMPTION_KVAH"],
 ];
 
 // Type validation

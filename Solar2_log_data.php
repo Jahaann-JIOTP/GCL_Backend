@@ -55,7 +55,7 @@ $tagGroups = [
     "harmonics"  =>["HARMONICS_I1_THD", "HARMONICS_I2_THD","HARMONICS_I3_THD","HARMONICS_V1_THD","HARMONICS_V2_THD", "HARMONICS_V3_THD"],
     "active_energy" =>["ACTIVE_ENERGY_IMPORT_KWH", "ACTIVE_ENERGY_EXPORT_KWH"],
     "reactive_energy"  => [ "REACTIVE_ENERGY_IMPORT_KVARH", "REACTIVE_ENERGY_EXPORT_KVARH"],
-    "apparent_energy"=>["APPARENT_ENERGY_KVAH"] 
+    "apparent_energy"=>["APPARENT_ENERGY_IMPORT_KVAH"] 
 ];
 
 // Type validation

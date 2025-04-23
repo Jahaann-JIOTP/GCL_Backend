@@ -62,7 +62,10 @@ $meterTitles = [
     "G1_U13" => "Rental Genset",
     "G1_U14" => "Water Treatment Area",
     "G1_U15" => "Spare 05",
-    "G1_U16" => "Spare 06",
+    "G1_U16" => "Main Genset",
+    "G1_U17" => "Genset 1",
+    "G1_U18" => "Genset 2",
+    "G1_U19" => "Genset 3",
     "G2_U2" => "Press PH 4300/1750-1",
     "G2_U3" => "Ball Mills 03",
     "G2_U4" => "Hard Material",
@@ -98,7 +101,25 @@ if ($meter && isset($meterTitles[$meter])) {
     foreach ($meterKeys as $key) {
         $fullKey = $meter . "_" . $key;
         $meterData[$key] = isset($msg[$fullKey]) ? round($msg[$fullKey], 2) : 0;
+    
+        // Existing condition for U_24 and U_25
+        if (in_array($meter, ["U_24", "U_25"]) && strpos($key, "POWER") !== false) {
+            $meterData[$key] = round($meterData[$key] / 1000, 2);
+        }
+    
+        // New condition for G2_U20 for specific apparent power keys
+        $apparentPowerKeys = [
+            "APPARENT_POWER_TOTAL_KVA",
+            "APPARENT_POWER_S1_KVA",
+            "APPARENT_POWER_S2_KVA",
+            "APPARENT_POWER_S3_KVA"
+        ];
+    
+        if ($meter === "G2_U20" && in_array($key, $apparentPowerKeys)) {
+            $meterData[$key] = round($meterData[$key] / 1000, 2);
+        }
     }
+    
 
     $response = [
         "authorized" => true,

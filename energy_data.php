@@ -62,7 +62,10 @@ $meterTitles = [
     "G1_U13" => "Rental Genset",
     "G1_U14" => "Water Treatment Area",
     "G1_U15" => "Spare 05",
-    "G1_U16" => "Spare 06",
+    "G1_U16" => "Main Genset",
+    "G1_U17" => "Genset 1",
+    "G1_U18" => "Genset 2",
+    "G1_U19" => "Genset 3",
     "G2_U2" => "Press PH 4300/1750-1",
     "G2_U3" => "Ball Mills 03",
     "G2_U4" => "Hard Material",
@@ -86,8 +89,8 @@ $meterTitles = [
 // Define the keys to fetch for energy data
 $energyKeys = [
     "ACTIVE_ENERGY_IMPORT_KWH", "ACTIVE_ENERGY_EXPORT_KWH", "REACTIVE_ENERGY_IMPORT_KVARH",
-    "REACTIVE_ENERGY_EXPORT_KVARH", "APPARENT_ENERGY_IMPORT_KVAH",
-    "APPARENT_ENERGY_EXPORT_KVAH",
+    "REACTIVE_ENERGY_EXPORT_KVARH", "APPARENT_ENERGY_KVAH",
+    "APPARENT_ENERGY_EXPORT_KVAH","APPARENT_ENERGY_IMPORT_KVAH","SIGNED_REAL_ENERGY_CONSUMPTION_KWH","APPARENT_ENERGY_CONSUMPTION_KVAH"
 ];
 
 // Check if the meter parameter is provided and valid
