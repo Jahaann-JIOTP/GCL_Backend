@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 }
 
 // Database connection
-$con = mysqli_connect("15.206.128.214", "jahaann", "Jahaann#321", "gcl");
+$con = mysqli_connect("localhost", "jahaann", "Jahaann#321", "gcl");
 $response = array();
 
 if ($con) {

@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 header("Content-Type: application/json");
 
-$host = "15.206.128.214";
+$host = "localhost";
 $dbname = "gcl";
 $dbuser = "jahaann";
 $dbpassword = "Jahaann#321";

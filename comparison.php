@@ -44,7 +44,7 @@ if (!$url_data) {
 }
 
 // Database connection
-$con = mysqli_connect("15.206.128.214", "jahaann", "Jahaann#321", "gcl");
+$con = mysqli_connect("localhost", "jahaann", "Jahaann#321", "gcl");
 if (!$con) {
     die("Database connection failed: " . mysqli_connect_error());
 }
