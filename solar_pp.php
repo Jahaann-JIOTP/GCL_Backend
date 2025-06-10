@@ -15,7 +15,7 @@ function connectDB()
 }
 
 $db = connectDB();
-$collection = $db->GCL_ActiveTags;
+$collection = $db->GCL_new;
 $collection->createIndex(['timestamp' => 1]);
 
 $solarKeys = ["G2_U20_ACTIVE_ENERGY_IMPORT_KWH", "U_27_ACTIVE_ENERGY_IMPORT_KWH"];

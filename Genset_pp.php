@@ -15,7 +15,7 @@ function connectDB()
 }
 
 $db = connectDB();
-$collection = $db->GCL_ActiveTags;
+$collection = $db->GCL_new;
 $collection->createIndex(['timestamp' => 1]);
 
 $gensetKeys = ["G1_U16_ACTIVE_ENERGY_IMPORT_KWH", "G1_U17_ACTIVE_ENERGY_IMPORT_KWH", "G1_U18_ACTIVE_ENERGY_IMPORT_KWH", "G1_U19_ACTIVE_ENERGY_IMPORT_KWH"];

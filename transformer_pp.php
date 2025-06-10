@@ -15,7 +15,7 @@ function connectDB()
 }
 
 $db = connectDB();
-$collection = $db->GCL_ActiveTags;
+$collection = $db->GCL_new;
 $collection->createIndex(['timestamp' => 1]);
 
 $transformerKeys = ["U_24_ACTIVE_ENERGY_IMPORT_KWH", "U_25_ACTIVE_ENERGY_IMPORT_KWH"];

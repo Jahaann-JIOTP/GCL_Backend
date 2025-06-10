@@ -18,7 +18,7 @@ function connectDB()
 }
 
 $db = connectDB();
-$collection = $db->GCL_ActiveTags;
+$collection = $db->GCL_new;
 $collection->createIndex(['timestamp' => 1]);
 
 $meterIds = ["G2_U20", "U_27", "U_24", "U_25", "G1_U16", "G1_U17", "G1_U18", "G1_U19"];
