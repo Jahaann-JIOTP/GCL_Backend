@@ -39,7 +39,7 @@ $db = connectDB();
 
 // Collection selection based on type
 if ($type === 'active_energy') {
-    $collection = $db->GCL_ActiveTags;
+    $collection = $db->GCL_new;
 } else {
     $collection = $db->GCL_new;
 }

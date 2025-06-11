@@ -38,9 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['start_date']) && isset(
 
     try {
         // Determine the collection based on the suffix
-        $collectionName = in_array("Consumption", $suffixes) ? 'gcl_active' : 'gcl_all';
-        $collection = $db->$collectionName;
-
+        // $collectionName = in_array("Consumption", $suffixes) ? 'gcl_active' : 'gcl_all';
+        // $collection = $db->$collectionName;
+$collection = $db->GCL_new;
         // Build the aggregation pipeline
         $pipeline = [
             [

@@ -15,7 +15,7 @@ function connectDB()
 }
 
 $db = connectDB();
-$collection = $db->GCL_ActiveTags;
+$collection = $db->GCL_new;
 $collection->createIndex(['timestamp' => 1]);
 
 // Meter ID to Name Mapping

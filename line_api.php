@@ -15,7 +15,7 @@ function connectDB() {
 
 $db = connectDB();
 $collectionNew = $db->GCL_new;
-$collectionActiveTags = $db->GCL_ActiveTags;
+$collectionActiveTags = $db->GCL_new;
 
 $collectionNew->createIndex(['timestamp' => 1, 'meterId' => 1]);
 $collectionActiveTags->createIndex(['timestamp' => 1]);
