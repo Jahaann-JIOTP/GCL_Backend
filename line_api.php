@@ -5,7 +5,7 @@ header("Content-Type: application/json");
 
 function connectDB() {
     try {
-        $client = new MongoDB\Client("mongodb://localhost:27017");
+        $client = new MongoDB\Client("mongodb://admin:cisco123@13.234.241.103:27017/?authSource=iotdb&readPreference=primary&ssl=false");
         return $client->iotdb;
     } catch (Exception $e) {
         echo json_encode(["error" => "Failed to connect to MongoDB: " . $e->getMessage()]);
