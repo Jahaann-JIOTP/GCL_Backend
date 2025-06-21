@@ -186,7 +186,7 @@ foreach ($hourlyData as $dateStr => $hours) {
             'sum_avg_G2_U20_and_U_27' => $avgU26 + $avgU27,
             'avg_U_24_ACTIVE_POWER_TOTAL_KW' => $avgU24,
             'avg_U_25_ACTIVE_POWER_TOTAL_KW' => $avgU25,
-            'sum_avg_U_24_and_U_25' => ($avgU24 + $avgU25) / 1000,
+            'sum_avg_U_24_and_U_25' => ($avgU24 + $avgU25),
             'avg_G1_U16_ACTIVE_POWER_TOTAL_KW' => $avgG1_U16,
             'avg_G1_U17_ACTIVE_POWER_TOTAL_KW' => $avgG1_U17,
             'avg_G1_U18_ACTIVE_POWER_TOTAL_KW' => $avgG1_U18,
@@ -266,7 +266,7 @@ if ($dateRangeLabel === 'hourly') {
             
             'avg_U_24_ACTIVE_POWER_TOTAL_KW' => round($totals['total_U_24_ACTIVE_POWER_TOTAL_KW'] / $totals['count'], 2),
             'avg_U_25_ACTIVE_POWER_TOTAL_KW' => round($totals['total_U_25_ACTIVE_POWER_TOTAL_KW'] / $totals['count'], 2),
-            'sum_avg_U_24_and_U_25' => round(($totals['total_U_24_ACTIVE_POWER_TOTAL_KW'] + $totals['total_U_25_ACTIVE_POWER_TOTAL_KW']) / 1000, 2),
+            'sum_avg_U_24_and_U_25' => round(($totals['total_U_24_ACTIVE_POWER_TOTAL_KW'] + $totals['total_U_25_ACTIVE_POWER_TOTAL_KW']), 2),
             
             'avg_G1_U16_ACTIVE_POWER_TOTAL_KW' => round($totals['total_G1_U16_ACTIVE_POWER_TOTAL_KW'] / $totals['count'], 2),
             'avg_G1_U17_ACTIVE_POWER_TOTAL_KW' => round($totals['total_G1_U17_ACTIVE_POWER_TOTAL_KW'] / $totals['count'], 2),
@@ -341,7 +341,7 @@ if ($dateRangeLabel === 'hourly') {
             'sum_avg_G2_U20_and_U_27' => round(($totals['total_G2_U20_ACTIVE_POWER_TOTAL_KW'] + $totals['total_U_27_ACTIVE_POWER_TOTAL_KW']), 2),
             'avg_U_24_ACTIVE_POWER_TOTAL_KW' => round($totals['total_U_24_ACTIVE_POWER_TOTAL_KW'] / $totals['count'], 2),
             'avg_U_25_ACTIVE_POWER_TOTAL_KW' => round($totals['total_U_25_ACTIVE_POWER_TOTAL_KW'] / $totals['count'], 2),
-            'sum_avg_U_24_and_U_25' => round((($totals['total_U_24_ACTIVE_POWER_TOTAL_KW'] + $totals['total_U_25_ACTIVE_POWER_TOTAL_KW'])) / 1000, 2),
+            'sum_avg_U_24_and_U_25' => round((($totals['total_U_24_ACTIVE_POWER_TOTAL_KW'] + $totals['total_U_25_ACTIVE_POWER_TOTAL_KW'])), 2),
         
             'avg_G1_U16_ACTIVE_POWER_TOTAL_KW' => round($totals['total_G1_U16_ACTIVE_POWER_TOTAL_KW'] / $totals['count'], 2),
             'avg_G1_U17_ACTIVE_POWER_TOTAL_KW' => round($totals['total_G1_U17_ACTIVE_POWER_TOTAL_KW'] / $totals['count'], 2),
@@ -355,7 +355,7 @@ if ($dateRangeLabel === 'hourly') {
             'solar_usage' => round((($totals['total_G2_U20_ACTIVE_POWER_TOTAL_KW'] + $totals['total_U_27_ACTIVE_POWER_TOTAL_KW']) / 
             ((($totals['total_U_24_ACTIVE_POWER_TOTAL_KW'] + $totals['total_U_25_ACTIVE_POWER_TOTAL_KW'] + 
             $totals['total_G1_U16_ACTIVE_POWER_TOTAL_KW'] + $totals['total_G1_U17_ACTIVE_POWER_TOTAL_KW'] + 
-            $totals['total_G1_U18_ACTIVE_POWER_TOTAL_KW'] + $totals['total_G1_U19_ACTIVE_POWER_TOTAL_KW']) / 1000) + 
+            $totals['total_G1_U18_ACTIVE_POWER_TOTAL_KW'] + $totals['total_G1_U19_ACTIVE_POWER_TOTAL_KW'])) + 
             ($totals['total_G2_U20_ACTIVE_POWER_TOTAL_KW'] + $totals['total_U_27_ACTIVE_POWER_TOTAL_KW']))) * 100, 2)
         ];
         

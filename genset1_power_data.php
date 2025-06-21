@@ -54,7 +54,7 @@ if ($meter && isset($meterTitles[$meter])) {
     
         // Existing condition for U_24 and U_25
         if (in_array($meter, ["U_24", "U_25"]) && strpos($key, "POWER") !== false) {
-            $meterData[$key] = round($meterData[$key] / 1000, 2);
+            $meterData[$key] = round($meterData[$key], 2);
         }
     
         // New condition for G2_U20 for specific apparent power keys
@@ -66,7 +66,7 @@ if ($meter && isset($meterTitles[$meter])) {
         ];
     
         if ($meter === "G2_U20" && in_array($key, $apparentPowerKeys)) {
-            $meterData[$key] = round($meterData[$key] / 1000, 2);
+            $meterData[$key] = round($meterData[$key], 2);
         }
     }
     

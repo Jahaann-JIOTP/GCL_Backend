@@ -39,7 +39,7 @@ $db = connectDB();
 
 // Collection selection based on type
 if ($type === 'active_energy') {
-    $collection = $db->GCL_ActiveTags;
+    $collection = $db->GCL_new;
 } else {
     $collection = $db->GCL_new;
 }
@@ -99,14 +99,14 @@ try {
                 $field = "{$meterId}_{$tag}";
                 if (isset($item[$field])) {
                     if (in_array($type, ['active_power', 'reactive_power', 'apparent_power']) && in_array($meterId, ['U_24', 'U_25'])) {
-                        $entry[$tag] = $item[$field] / 1000;
+                        $entry[$tag] = $item[$field];
                     } elseif ($meterId === 'G2_U20' && in_array($tag, [
                         'APPARENT_POWER_S1_KVA',
                         'APPARENT_POWER_S2_KVA',
                         'APPARENT_POWER_S3_KVA',
                         'APPARENT_POWER_TOTAL_KVA'
                     ])) {
-                        $entry[$tag] = $item[$field] / 1000;
+                        $entry[$tag] = $item[$field];
                     } else {
                         $entry[$tag] = $item[$field];
                     }
