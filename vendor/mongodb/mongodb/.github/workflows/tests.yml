@@ -1,0 +1,86 @@
+name: "Tests"
+
+on:
+  merge_group:
+  pull_request:
+    branches:
+      - "v*.*"
+      - "feature/*"
+  push:
+    branches:
+      - "v*.*"
+      - "feature/*"
+
+env:
+  DRIVER_VERSION: "stable"
+
+jobs:
+  phpunit:
+    name: "PHPUnit tests"
+    runs-on: "${{ matrix.os }}"
+
+    strategy:
+      fail-fast: true
+      matrix:
+        os:
+          - "ubuntu-20.04"
+        php-version:
+          - "8.1"
+          - "8.2"
+          - "8.3"
+          - "8.4"
+        mongodb-version:
+          - "4.4"
+        topology:
+          - "server"
+        include:
+          - os: "ubuntu-20.04"
+            php-version: "8.1"
+            mongodb-version: "6.0"
+            topology: "replica_set"
+          - os: "ubuntu-20.04"
+            php-version: "8.1"
+            mongodb-version: "6.0"
+            topology: "sharded_cluster"
+          - os: "ubuntu-20.04"
+            php-version: "8.1"
+            mongodb-version: "5.0"
+            topology: "server"
+          - os: "ubuntu-20.04"
+            php-version: "8.1"
+            mongodb-version: "4.4"
+            topology: "replica_set"
+          - os: "ubuntu-20.04"
+            php-version: "8.1"
+            mongodb-version: "4.4"
+            topology: "sharded_cluster"
+
+    steps:
+      - name: "Checkout"
+        uses: "actions/checkout@v4"
+        with:
+          fetch-depth: 2
+          submodules: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: "Setup MongoDB"
+        id: setup-mongodb
+        uses: ./tests/drivers-evergreen-tools
+        with:
+          version: ${{ matrix.mongodb-version }}
+          topology: ${{ matrix.topology }}
+
+      - name: "Setup PHP"
+        uses: "./.github/actions/setup"
+        with:
+          php-version: ${{ matrix.php-version }}
+          driver-version: ${{ env.DRIVER_VERSION }}
+          php-ini-values: "zend.assertions=1"
+
+      - name: "Run PHPUnit"
+        run: "vendor/bin/phpunit"
+        env:
+          MONGODB_URI: ${{ steps.setup-mongodb.outputs.cluster-uri }}

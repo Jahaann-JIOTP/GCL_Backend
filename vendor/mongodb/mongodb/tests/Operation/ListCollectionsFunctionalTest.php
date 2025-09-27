@@ -2,17 +2,17 @@
 
 namespace MongoDB\Tests\Operation;
 
+use Iterator;
 use MongoDB\Model\CollectionInfo;
-use MongoDB\Model\CollectionInfoIterator;
 use MongoDB\Operation\DropDatabase;
 use MongoDB\Operation\InsertOne;
 use MongoDB\Operation\ListCollections;
 use MongoDB\Tests\CommandObserver;
-use function version_compare;
+use PHPUnit\Framework\Attributes\Group;
 
 class ListCollectionsFunctionalTest extends FunctionalTestCase
 {
-    public function testListCollectionsForNewlyCreatedDatabase()
+    public function testListCollectionsForNewlyCreatedDatabase(): void
     {
         $server = $this->getPrimaryServer();
 
@@ -26,7 +26,7 @@ class ListCollectionsFunctionalTest extends FunctionalTestCase
         $operation = new ListCollections($this->getDatabaseName(), ['filter' => ['name' => $this->getCollectionName()]]);
         $collections = $operation->execute($server);
 
-        $this->assertInstanceOf(CollectionInfoIterator::class, $collections);
+        $this->assertInstanceOf(Iterator::class, $collections);
 
         $this->assertCount(1, $collections);
 
@@ -36,12 +36,12 @@ class ListCollectionsFunctionalTest extends FunctionalTestCase
         }
     }
 
-    public function testIdIndexAndInfo()
+    #[Group('matrix-testing-exclude-server-4.4-driver-4.0')]
+    #[Group('matrix-testing-exclude-server-4.4-driver-4.2')]
+    #[Group('matrix-testing-exclude-server-5.0-driver-4.0')]
+    #[Group('matrix-testing-exclude-server-5.0-driver-4.2')]
+    public function testIdIndexAndInfo(): void
     {
-        if (version_compare($this->getServerVersion(), '3.4.0', '<')) {
-            $this->markTestSkipped('idIndex and info are not supported');
-        }
-
         $server = $this->getPrimaryServer();
 
         $insertOne = new InsertOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1]);
@@ -51,16 +51,18 @@ class ListCollectionsFunctionalTest extends FunctionalTestCase
         $operation = new ListCollections($this->getDatabaseName(), ['filter' => ['name' => $this->getCollectionName()]]);
         $collections = $operation->execute($server);
 
-        $this->assertInstanceOf(CollectionInfoIterator::class, $collections);
+        $this->assertInstanceOf(Iterator::class, $collections);
 
         foreach ($collections as $collection) {
             $this->assertInstanceOf(CollectionInfo::class, $collection);
             $this->assertArrayHasKey('readOnly', $collection['info']);
-            $this->assertEquals(['v' => 2, 'key' => ['_id' => 1], 'name' => '_id_', 'ns' => $this->getNamespace()], $collection['idIndex']);
+            // Use assertMatchesDocument as MongoDB 4.0 and 4.2 include a ns field
+            // TODO: change to assertEquals when dropping support for MongoDB 4.2
+            $this->assertMatchesDocument(['v' => 2, 'key' => ['_id' => 1], 'name' => '_id_'], $collection['idIndex']);
         }
     }
 
-    public function testListCollectionsForNonexistentDatabase()
+    public function testListCollectionsForNonexistentDatabase(): void
     {
         $server = $this->getPrimaryServer();
 
@@ -73,24 +75,38 @@ class ListCollectionsFunctionalTest extends FunctionalTestCase
         $this->assertCount(0, $collections);
     }
 
-    public function testSessionOption()
+    public function testAuthorizedCollectionsOption(): void
     {
-        if (version_compare($this->getServerVersion(), '3.6.0', '<')) {
-            $this->markTestSkipped('Sessions are not supported');
-        }
-
         (new CommandObserver())->observe(
-            function () {
+            function (): void {
                 $operation = new ListCollections(
                     $this->getDatabaseName(),
-                    ['session' => $this->createSession()]
+                    ['authorizedCollections' => true],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectHasAttribute('lsid', $event['started']->getCommand());
-            }
+            function (array $event): void {
+                $this->assertObjectHasProperty('authorizedCollections', $event['started']->getCommand());
+                $this->assertSame(true, $event['started']->getCommand()->authorizedCollections);
+            },
+        );
+    }
+
+    public function testSessionOption(): void
+    {
+        (new CommandObserver())->observe(
+            function (): void {
+                $operation = new ListCollections(
+                    $this->getDatabaseName(),
+                    ['session' => $this->createSession()],
+                );
+
+                $operation->execute($this->getPrimaryServer());
+            },
+            function (array $event): void {
+                $this->assertObjectHasProperty('lsid', $event['started']->getCommand());
+            },
         );
     }
 }

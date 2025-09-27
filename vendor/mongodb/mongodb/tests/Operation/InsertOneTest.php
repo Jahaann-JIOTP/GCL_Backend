@@ -2,45 +2,44 @@
 
 namespace MongoDB\Tests\Operation;
 
+use MongoDB\BSON\PackedArray;
 use MongoDB\Exception\InvalidArgumentException;
+use MongoDB\Exception\UnsupportedValueException;
 use MongoDB\Operation\InsertOne;
+use MongoDB\Tests\Fixtures\Codec\TestDocumentCodec;
+use PHPUnit\Framework\Attributes\DataProvider;
+use TypeError;
 
 class InsertOneTest extends TestCase
 {
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testConstructorDocumentArgumentTypeCheck($document)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorDocumentArgumentTypeCheck($document): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException($document instanceof PackedArray ? InvalidArgumentException::class : TypeError::class);
         new InsertOne($this->getDatabaseName(), $this->getCollectionName(), $document);
     }
 
-    /**
-     * @dataProvider provideInvalidConstructorOptions
-     */
-    public function testConstructorOptionTypeChecks(array $options)
+    #[DataProvider('provideInvalidConstructorOptions')]
+    public function testConstructorOptionTypeChecks(array $options): void
     {
         $this->expectException(InvalidArgumentException::class);
         new InsertOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $options);
     }
 
-    public function provideInvalidConstructorOptions()
+    public static function provideInvalidConstructorOptions()
     {
-        $options = [];
+        return self::createOptionDataProvider([
+            'bypassDocumentValidation' => self::getInvalidBooleanValues(),
+            'codec' => self::getInvalidDocumentCodecValues(),
+            'session' => self::getInvalidSessionValues(),
+            'writeConcern' => self::getInvalidWriteConcernValues(),
+        ]);
+    }
 
-        foreach ($this->getInvalidBooleanValues() as $value) {
-            $options[][] = ['bypassDocumentValidation' => $value];
-        }
+    public function testCodecRejectsInvalidDocuments(): void
+    {
+        $this->expectExceptionObject(UnsupportedValueException::invalidEncodableValue([]));
 
-        foreach ($this->getInvalidSessionValues() as $value) {
-            $options[][] = ['session' => $value];
-        }
-
-        foreach ($this->getInvalidWriteConcernValues() as $value) {
-            $options[][] = ['writeConcern' => $value];
-        }
-
-        return $options;
+        new InsertOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], ['codec' => new TestDocumentCodec()]);
     }
 }

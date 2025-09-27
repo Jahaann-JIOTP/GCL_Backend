@@ -4,13 +4,35 @@ namespace MongoDB\Tests\GridFS;
 
 use MongoDB\BSON\Binary;
 use MongoDB\BSON\UTCDateTime;
-use Symfony\Bridge\PhpUnit\SetUpTearDownTrait;
+use MongoDB\GridFS\Exception\FileNotFoundException;
+use MongoDB\GridFS\Exception\LogicException;
+use MongoDB\GridFS\StreamWrapper;
+use PHPUnit\Framework\Attributes\DataProvider;
+
+use function copy;
 use function fclose;
 use function feof;
+use function file_exists;
+use function file_get_contents;
+use function file_put_contents;
+use function filemtime;
+use function filesize;
+use function filetype;
+use function fopen;
 use function fread;
 use function fseek;
 use function fstat;
 use function fwrite;
+use function is_dir;
+use function is_file;
+use function is_link;
+use function rename;
+use function stream_context_create;
+use function stream_get_contents;
+use function time;
+use function unlink;
+use function usleep;
+
 use const SEEK_CUR;
 use const SEEK_END;
 use const SEEK_SET;
@@ -20,31 +42,36 @@ use const SEEK_SET;
  */
 class StreamWrapperFunctionalTest extends FunctionalTestCase
 {
-    use SetUpTearDownTrait;
-
-    private function doSetUp()
+    public function setUp(): void
     {
         parent::setUp();
 
         $this->filesCollection->insertMany([
-            ['_id' => 'length-10', 'length' => 10, 'chunkSize' => 4, 'uploadDate' => new UTCDateTime('1484202200000')],
+            ['_id' => 'length-10', 'length' => 10, 'chunkSize' => 4, 'uploadDate' => new UTCDateTime(1484202200000)],
         ]);
 
         $this->chunksCollection->insertMany([
-            ['_id' => 1, 'files_id' => 'length-10', 'n' => 0, 'data' => new Binary('abcd', Binary::TYPE_GENERIC)],
-            ['_id' => 2, 'files_id' => 'length-10', 'n' => 1, 'data' => new Binary('efgh', Binary::TYPE_GENERIC)],
-            ['_id' => 3, 'files_id' => 'length-10', 'n' => 2, 'data' => new Binary('ij', Binary::TYPE_GENERIC)],
+            ['_id' => 1, 'files_id' => 'length-10', 'n' => 0, 'data' => new Binary('abcd')],
+            ['_id' => 2, 'files_id' => 'length-10', 'n' => 1, 'data' => new Binary('efgh')],
+            ['_id' => 3, 'files_id' => 'length-10', 'n' => 2, 'data' => new Binary('ij')],
         ]);
     }
 
-    public function testReadableStreamClose()
+    public function tearDown(): void
+    {
+        StreamWrapper::setContextResolver('bucket', null);
+
+        parent::tearDown();
+    }
+
+    public function testReadableStreamClose(): void
     {
         $stream = $this->bucket->openDownloadStream('length-10');
 
         $this->assertTrue(fclose($stream));
     }
 
-    public function testReadableStreamEof()
+    public function testReadableStreamEof(): void
     {
         $stream = $this->bucket->openDownloadStream('length-10');
 
@@ -53,7 +80,7 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertTrue(feof($stream));
     }
 
-    public function testReadableStreamRead()
+    public function testReadableStreamRead(): void
     {
         $stream = $this->bucket->openDownloadStream('length-10');
 
@@ -62,7 +89,7 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertSame('', fread($stream, 3));
     }
 
-    public function testReadableStreamSeek()
+    public function testReadableStreamSeek(): void
     {
         $stream = $this->bucket->openDownloadStream('length-10');
 
@@ -88,7 +115,7 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertSame(-1, fseek($stream, 1, SEEK_END));
     }
 
-    public function testReadableStreamStat()
+    public function testReadableStreamStat(): void
     {
         $stream = $this->bucket->openDownloadStream('length-10');
 
@@ -97,22 +124,22 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertSame(0100444, $stat['mode']);
         $this->assertSame(10, $stat[7]);
         $this->assertSame(10, $stat['size']);
-        $this->assertSame(1484202200, $stat[9]);
-        $this->assertSame(1484202200, $stat['mtime']);
-        $this->assertSame(1484202200, $stat[10]);
-        $this->assertSame(1484202200, $stat['ctime']);
+        $this->assertSame(1_484_202_200, $stat[9]);
+        $this->assertSame(1_484_202_200, $stat['mtime']);
+        $this->assertSame(1_484_202_200, $stat[10]);
+        $this->assertSame(1_484_202_200, $stat['ctime']);
         $this->assertSame(4, $stat[11]);
         $this->assertSame(4, $stat['blksize']);
     }
 
-    public function testReadableStreamWrite()
+    public function testReadableStreamWrite(): void
     {
         $stream = $this->bucket->openDownloadStream('length-10');
 
         $this->assertSame(0, fwrite($stream, 'foobar'));
     }
 
-    public function testWritableStreamClose()
+    public function testWritableStreamClose(): void
     {
         $stream = $this->bucket->openUploadStream('filename');
 
@@ -122,7 +149,7 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertStreamContents('foobar', $this->bucket->openDownloadStreamByName('filename'));
     }
 
-    public function testWritableStreamEof()
+    public function testWritableStreamEof(): void
     {
         $stream = $this->bucket->openUploadStream('filename');
 
@@ -131,7 +158,7 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertFalse(feof($stream));
     }
 
-    public function testWritableStreamRead()
+    public function testWritableStreamRead(): void
     {
         $stream = $this->bucket->openUploadStream('filename');
 
@@ -140,7 +167,7 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertSame('', fread($stream, 8192));
     }
 
-    public function testWritableStreamSeek()
+    public function testWritableStreamSeek(): void
     {
         $stream = $this->bucket->openUploadStream('filename');
 
@@ -159,7 +186,7 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertSame(-1, fseek($stream, 1, SEEK_END));
     }
 
-    public function testWritableStreamStatBeforeSaving()
+    public function testWritableStreamStatBeforeSaving(): void
     {
         $stream = $this->bucket->openUploadStream('filename', ['chunkSizeBytes' => 1024]);
 
@@ -182,7 +209,7 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertSame(6, $stat['size']);
     }
 
-    public function testWritableStreamStatAfterSaving()
+    public function testWritableStreamStatAfterSaving(): void
     {
         $stream = $this->bucket->openDownloadStream('length-10');
 
@@ -191,18 +218,216 @@ class StreamWrapperFunctionalTest extends FunctionalTestCase
         $this->assertSame(0100444, $stat['mode']);
         $this->assertSame(10, $stat[7]);
         $this->assertSame(10, $stat['size']);
-        $this->assertSame(1484202200, $stat[9]);
-        $this->assertSame(1484202200, $stat['mtime']);
-        $this->assertSame(1484202200, $stat[10]);
-        $this->assertSame(1484202200, $stat['ctime']);
+        $this->assertSame(1_484_202_200, $stat[9]);
+        $this->assertSame(1_484_202_200, $stat['mtime']);
+        $this->assertSame(1_484_202_200, $stat[10]);
+        $this->assertSame(1_484_202_200, $stat['ctime']);
         $this->assertSame(4, $stat[11]);
         $this->assertSame(4, $stat['blksize']);
     }
 
-    public function testWritableStreamWrite()
+    public function testWritableStreamWrite(): void
     {
         $stream = $this->bucket->openUploadStream('filename');
 
         $this->assertSame(6, fwrite($stream, 'foobar'));
+    }
+
+    #[DataProvider('provideUrl')]
+    public function testStreamWithContextResolver(string $url, string $expectedFilename): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+
+        $stream = fopen($url, 'wb');
+
+        $this->assertSame(6, fwrite($stream, 'foobar'));
+        $this->assertTrue(fclose($stream));
+
+        $file = $this->filesCollection->findOne(['filename' => $expectedFilename]);
+        $this->assertNotNull($file);
+
+        $stream = fopen($url, 'rb');
+
+        $this->assertSame('foobar', fread($stream, 10));
+        $this->assertTrue(fclose($stream));
+    }
+
+    public static function provideUrl()
+    {
+        yield 'simple file' => ['gridfs://bucket/filename', 'filename'];
+        yield 'subdirectory file' => ['gridfs://bucket/path/to/filename.txt', 'path/to/filename.txt'];
+        yield 'question mark can be used in file name' => ['gridfs://bucket/file%20name?foo=bar', 'file%20name?foo=bar'];
+    }
+
+    public function testFilePutAndGetContents(): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+
+        $filename = 'gridfs://bucket/path/to/filename';
+
+        $this->assertSame(6, file_put_contents($filename, 'foobar'));
+
+        $file = $this->filesCollection->findOne(['filename' => 'path/to/filename']);
+        $this->assertNotNull($file);
+
+        $this->assertSame('foobar', file_get_contents($filename));
+    }
+
+    public function testEmptyFilename(): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+
+        $filename = 'gridfs://bucket';
+
+        $this->assertSame(6, file_put_contents($filename, 'foobar'));
+
+        $file = $this->filesCollection->findOne(['filename' => '']);
+        $this->assertNotNull($file);
+
+        $this->assertSame('foobar', file_get_contents($filename));
+    }
+
+    public function testOpenSpecificRevision(): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+
+        $filename = 'gridfs://bucket/path/to/filename';
+
+        // Insert 3 revisions, wait 1ms between each to ensure they have different uploadDate
+        file_put_contents($filename, 'version 0');
+        usleep(1000);
+        file_put_contents($filename, 'version 1');
+        usleep(1000);
+        file_put_contents($filename, 'version 2');
+
+        $context = stream_context_create([
+            'gridfs' => ['revision' => -2],
+        ]);
+        $stream = fopen($filename, 'r', false, $context);
+        $this->assertSame('version 1', stream_get_contents($stream));
+        fclose($stream);
+
+        // Revision not existing
+        $this->expectException(FileNotFoundException::class);
+        $this->expectExceptionMessage('File with name "path/to/filename" and revision "10" not found in "gridfs://bucket/path/to/filename"');
+        $context = stream_context_create([
+            'gridfs' => ['revision' => 10],
+        ]);
+        fopen($filename, 'r', false, $context);
+    }
+
+    public function testFileNoFoundWithContextResolver(): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+
+        $this->expectException(FileNotFoundException::class);
+        $this->expectExceptionMessage('File with name "filename" and revision "-1" not found in "gridfs://bucket/filename"');
+
+        fopen('gridfs://bucket/filename', 'r');
+    }
+
+    public function testFileNoFoundWithoutDefaultResolver(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('GridFS stream wrapper has no bucket alias: "bucket"');
+
+        fopen('gridfs://bucket/filename', 'w');
+    }
+
+    public function testFileStats(): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+        $path = 'gridfs://bucket/filename';
+
+        $this->assertFalse(file_exists($path));
+        $this->assertFalse(is_file($path));
+
+        $time = time();
+        $this->assertSame(6, file_put_contents($path, 'foobar'));
+
+        $this->assertTrue(file_exists($path));
+        $this->assertSame('file', filetype($path));
+        $this->assertTrue(is_file($path));
+        $this->assertFalse(is_dir($path));
+        $this->assertFalse(is_link($path));
+        $this->assertSame(6, filesize($path));
+        $this->assertGreaterThanOrEqual($time, filemtime($path));
+        $this->assertLessThanOrEqual(time(), filemtime($path));
+    }
+
+    public function testCopy(): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+        $path = 'gridfs://bucket/filename';
+
+        $this->assertSame(6, file_put_contents($path, 'foobar'));
+
+        copy($path, $path . '.copy');
+        $this->assertSame('foobar', file_get_contents($path . '.copy'));
+        $this->assertSame('foobar', file_get_contents($path));
+    }
+
+    public function testRenameAllRevisions(): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+        $path = 'gridfs://bucket/filename';
+
+        $this->assertSame(6, file_put_contents($path, 'foobar'));
+        $this->assertSame(6, file_put_contents($path, 'foobar'));
+        $this->assertSame(6, file_put_contents($path, 'foobar'));
+
+        $result = rename($path, $path . '.renamed');
+        $this->assertTrue($result);
+        $this->assertTrue(file_exists($path . '.renamed'));
+        $this->assertFalse(file_exists($path));
+        $this->assertSame('foobar', file_get_contents($path . '.renamed'));
+
+        $this->expectException(FileNotFoundException::class);
+        $this->expectExceptionMessage('File with name "gridfs://bucket/filename" not found');
+        rename($path, $path . '.renamed');
+    }
+
+    public function testRenameSameFilename(): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+        $path = 'gridfs://bucket/filename';
+
+        $this->assertSame(6, file_put_contents($path, 'foobar'));
+
+        $result = rename($path, $path);
+        $this->assertTrue($result);
+        $this->assertTrue(file_exists($path));
+        $this->assertSame('foobar', file_get_contents($path));
+
+        $path = 'gridfs://bucket/missing';
+        $this->expectException(FileNotFoundException::class);
+        $this->expectExceptionMessage('File with name "gridfs://bucket/missing" not found');
+        rename($path, $path);
+    }
+
+    public function testRenamePathMismatch(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Cannot rename "gridfs://bucket/filename" to "gridfs://other/newname" because they are not in the same GridFS bucket.');
+
+        rename('gridfs://bucket/filename', 'gridfs://other/newname');
+    }
+
+    public function testUnlinkAllRevisions(): void
+    {
+        $this->bucket->registerGlobalStreamWrapperAlias('bucket');
+        $path = 'gridfs://bucket/path/to/filename';
+
+        file_put_contents($path, 'version 0');
+        file_put_contents($path, 'version 1');
+
+        $result = unlink($path);
+
+        $this->assertTrue($result);
+        $this->assertFalse(file_exists($path));
+
+        $this->expectException(FileNotFoundException::class);
+        $this->expectExceptionMessage('File with name "gridfs://bucket/path/to/filename" not found');
+        unlink($path);
     }
 }

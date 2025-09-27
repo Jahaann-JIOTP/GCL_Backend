@@ -1,12 +1,12 @@
 <?php
 /*
- * Copyright 2015-2017 MongoDB, Inc.
+ * Copyright 2015-present MongoDB, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,32 +17,16 @@
 
 namespace MongoDB;
 
+use MongoDB\Driver\Exception\LogicException;
 use MongoDB\Driver\WriteResult;
-use MongoDB\Exception\BadMethodCallException;
 
 /**
  * Result class for a single-document insert operation.
  */
 class InsertOneResult
 {
-    /** @var WriteResult */
-    private $writeResult;
-
-    /** @var mixed */
-    private $insertedId;
-
-    /** @var boolean */
-    private $isAcknowledged;
-
-    /**
-     * @param WriteResult $writeResult
-     * @param mixed       $insertedId
-     */
-    public function __construct(WriteResult $writeResult, $insertedId)
+    public function __construct(private WriteResult $writeResult, private mixed $insertedId)
     {
-        $this->writeResult = $writeResult;
-        $this->insertedId = $insertedId;
-        $this->isAcknowledged = $writeResult->isAcknowledged();
     }
 
     /**
@@ -51,16 +35,11 @@ class InsertOneResult
      * This method should only be called if the write was acknowledged.
      *
      * @see InsertOneResult::isAcknowledged()
-     * @return integer
-     * @throws BadMethodCallException is the write result is unacknowledged
+     * @throws LogicException if the write result is unacknowledged
      */
-    public function getInsertedCount()
+    public function getInsertedCount(): int
     {
-        if ($this->isAcknowledged) {
-            return $this->writeResult->getInsertedCount();
-        }
-
-        throw BadMethodCallException::unacknowledgedWriteResultAccess(__METHOD__);
+        return $this->writeResult->getInsertedCount();
     }
 
     /**
@@ -69,10 +48,8 @@ class InsertOneResult
      * If the document had an ID prior to inserting (i.e. the driver did not
      * need to generate an ID), this will contain its "_id". Any
      * driver-generated ID will be a MongoDB\BSON\ObjectId instance.
-     *
-     * @return mixed
      */
-    public function getInsertedId()
+    public function getInsertedId(): mixed
     {
         return $this->insertedId;
     }
@@ -86,10 +63,8 @@ class InsertOneResult
      * If the insert was not acknowledged, other fields from the WriteResult
      * (e.g. insertedCount) will be undefined and their getter methods should
      * not be invoked.
-     *
-     * @return boolean
      */
-    public function isAcknowledged()
+    public function isAcknowledged(): bool
     {
         return $this->writeResult->isAcknowledged();
     }

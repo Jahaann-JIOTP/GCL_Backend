@@ -2,64 +2,43 @@
 
 namespace MongoDB\Tests\Operation;
 
+use MongoDB\BSON\PackedArray;
 use MongoDB\Exception\InvalidArgumentException;
-use MongoDB\Model\BSONDocument;
 use MongoDB\Operation\UpdateOne;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\DoesNotPerformAssertions;
+use TypeError;
 
 class UpdateOneTest extends TestCase
 {
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testConstructorFilterArgumentTypeCheck($filter)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorFilterArgumentTypeCheck($filter): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException($filter instanceof PackedArray ? InvalidArgumentException::class : TypeError::class);
         new UpdateOne($this->getDatabaseName(), $this->getCollectionName(), $filter, ['$set' => ['x' => 1]]);
     }
 
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testConstructorUpdateArgumentTypeCheck($update)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorUpdateArgumentTypeCheck($update): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException($update instanceof PackedArray ? InvalidArgumentException::class : TypeError::class);
         new UpdateOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $update);
     }
 
-    /**
-     * @dataProvider provideUpdateDocuments
-     * @doesNotPerformAssertions
-     */
-    public function testConstructorUpdateArgument($update)
+    #[DataProvider('provideUpdateDocuments')]
+    #[DataProvider('provideUpdatePipelines')]
+    #[DoesNotPerformAssertions]
+    public function testConstructorUpdateArgument($update): void
     {
         new UpdateOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $update);
     }
 
-    /**
-     * @dataProvider provideReplacementDocuments
-     */
-    public function testConstructorUpdateArgumentRequiresOperators($replacement)
+    #[DataProvider('provideReplacementDocuments')]
+    #[DataProvider('provideEmptyUpdatePipelines')]
+    public function testConstructorUpdateArgumentProhibitsReplacementDocumentOrEmptyPipeline($update): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Expected an update document with operator as first key or a pipeline');
-        new UpdateOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $replacement);
-    }
-
-    public function provideReplacementDocuments()
-    {
-        return $this->wrapValuesForDataProvider([
-            ['y' => 1],
-            (object) ['y' => 1],
-            new BSONDocument(['y' => 1]),
-        ]);
-    }
-
-    public function provideUpdateDocuments()
-    {
-        return $this->wrapValuesForDataProvider([
-            ['$set' => ['y' => 1]],
-            (object) ['$set' => ['y' => 1]],
-            new BSONDocument(['$set' => ['y' => 1]]),
-        ]);
+        $this->expectExceptionMessage('Expected update operator(s) or non-empty pipeline for $update');
+        new UpdateOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $update);
     }
 }

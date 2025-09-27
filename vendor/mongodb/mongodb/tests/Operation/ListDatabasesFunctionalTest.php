@@ -2,16 +2,15 @@
 
 namespace MongoDB\Tests\Operation;
 
+use Iterator;
 use MongoDB\Model\DatabaseInfo;
-use MongoDB\Model\DatabaseInfoIterator;
 use MongoDB\Operation\InsertOne;
 use MongoDB\Operation\ListDatabases;
 use MongoDB\Tests\CommandObserver;
-use function version_compare;
 
 class ListDatabasesFunctionalTest extends FunctionalTestCase
 {
-    public function testListDatabases()
+    public function testListDatabases(): void
     {
         $server = $this->getPrimaryServer();
 
@@ -19,22 +18,44 @@ class ListDatabasesFunctionalTest extends FunctionalTestCase
         $writeResult = $insertOne->execute($server);
         $this->assertEquals(1, $writeResult->getInsertedCount());
 
-        $operation = new ListDatabases();
-        $databases = $operation->execute($server);
+        $databases = null;
+        (new CommandObserver())->observe(
+            function () use (&$databases, $server): void {
+                $operation = new ListDatabases();
 
-        $this->assertInstanceOf(DatabaseInfoIterator::class, $databases);
+                $databases = $operation->execute($server);
+            },
+            function (array $event): void {
+                $this->assertObjectNotHasProperty('authorizedDatabases', $event['started']->getCommand());
+            },
+        );
+
+        $this->assertInstanceOf(Iterator::class, $databases);
 
         foreach ($databases as $database) {
             $this->assertInstanceOf(DatabaseInfo::class, $database);
         }
     }
 
-    public function testFilterOption()
+    public function testAuthorizedDatabasesOption(): void
     {
-        if (version_compare($this->getServerVersion(), '3.6.0', '<')) {
-            $this->markTestSkipped('listDatabase command "filter" option is not supported');
-        }
+        (new CommandObserver())->observe(
+            function (): void {
+                $operation = new ListDatabases(
+                    ['authorizedDatabases' => true],
+                );
 
+                $operation->execute($this->getPrimaryServer());
+            },
+            function (array $event): void {
+                $this->assertObjectHasProperty('authorizedDatabases', $event['started']->getCommand());
+                $this->assertSame(true, $event['started']->getCommand()->authorizedDatabases);
+            },
+        );
+    }
+
+    public function testFilterOption(): void
+    {
         $server = $this->getPrimaryServer();
 
         $insertOne = new InsertOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1]);
@@ -44,7 +65,7 @@ class ListDatabasesFunctionalTest extends FunctionalTestCase
         $operation = new ListDatabases(['filter' => ['name' => $this->getDatabaseName()]]);
         $databases = $operation->execute($server);
 
-        $this->assertInstanceOf(DatabaseInfoIterator::class, $databases);
+        $this->assertInstanceOf(Iterator::class, $databases);
 
         $this->assertCount(1, $databases);
 
@@ -54,23 +75,19 @@ class ListDatabasesFunctionalTest extends FunctionalTestCase
         }
     }
 
-    public function testSessionOption()
+    public function testSessionOption(): void
     {
-        if (version_compare($this->getServerVersion(), '3.6.0', '<')) {
-            $this->markTestSkipped('Sessions are not supported');
-        }
-
         (new CommandObserver())->observe(
-            function () {
+            function (): void {
                 $operation = new ListDatabases(
-                    ['session' => $this->createSession()]
+                    ['session' => $this->createSession()],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectHasAttribute('lsid', $event['started']->getCommand());
-            }
+            function (array $event): void {
+                $this->assertObjectHasProperty('lsid', $event['started']->getCommand());
+            },
         );
     }
 }

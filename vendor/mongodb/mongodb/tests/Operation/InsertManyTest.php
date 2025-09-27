@@ -3,63 +3,57 @@
 namespace MongoDB\Tests\Operation;
 
 use MongoDB\Exception\InvalidArgumentException;
+use MongoDB\Exception\UnsupportedValueException;
 use MongoDB\Operation\InsertMany;
+use MongoDB\Tests\Fixtures\Codec\TestDocumentCodec;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class InsertManyTest extends TestCase
 {
-    public function testConstructorDocumentsMustNotBeEmpty()
+    public function testConstructorDocumentsMustNotBeEmpty(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('$documents is empty');
         new InsertMany($this->getDatabaseName(), $this->getCollectionName(), []);
     }
 
-    public function testConstructorDocumentsMustBeAList()
+    public function testConstructorDocumentsMustBeAList(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('$documents is not a list (unexpected index: "1")');
+        $this->expectExceptionMessage('$documents is not a list');
         new InsertMany($this->getDatabaseName(), $this->getCollectionName(), [1 => ['x' => 1]]);
     }
 
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testConstructorDocumentsArgumentElementTypeChecks($document)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorDocumentsArgumentElementTypeChecks($document): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessageRegExp('/Expected \$documents[0\] to have type "array or object" but found "[\w ]+"/');
+        $this->expectExceptionMessageMatches('/Expected \$documents[0\] to have type "array or object" but found "[\w ]+"/');
         new InsertMany($this->getDatabaseName(), $this->getCollectionName(), [$document]);
     }
 
-    /**
-     * @dataProvider provideInvalidConstructorOptions
-     */
-    public function testConstructorOptionTypeChecks(array $options)
+    #[DataProvider('provideInvalidConstructorOptions')]
+    public function testConstructorOptionTypeChecks(array $options): void
     {
         $this->expectException(InvalidArgumentException::class);
         new InsertMany($this->getDatabaseName(), $this->getCollectionName(), [['x' => 1]], $options);
     }
 
-    public function provideInvalidConstructorOptions()
+    public static function provideInvalidConstructorOptions()
     {
-        $options = [];
+        return self::createOptionDataProvider([
+            'bypassDocumentValidation' => self::getInvalidBooleanValues(),
+            'codec' => self::getInvalidDocumentCodecValues(),
+            'ordered' => self::getInvalidBooleanValues(true),
+            'session' => self::getInvalidSessionValues(),
+            'writeConcern' => self::getInvalidWriteConcernValues(),
+        ]);
+    }
 
-        foreach ($this->getInvalidBooleanValues() as $value) {
-            $options[][] = ['bypassDocumentValidation' => $value];
-        }
+    public function testCodecRejectsInvalidDocuments(): void
+    {
+        $this->expectExceptionObject(UnsupportedValueException::invalidEncodableValue([]));
 
-        foreach ($this->getInvalidBooleanValues() as $value) {
-            $options[][] = ['ordered' => $value];
-        }
-
-        foreach ($this->getInvalidSessionValues() as $value) {
-            $options[][] = ['session' => $value];
-        }
-
-        foreach ($this->getInvalidWriteConcernValues() as $value) {
-            $options[][] = ['writeConcern' => $value];
-        }
-
-        return $options;
+        new InsertMany($this->getDatabaseName(), $this->getCollectionName(), [['x' => 1]], ['codec' => new TestDocumentCodec()]);
     }
 }

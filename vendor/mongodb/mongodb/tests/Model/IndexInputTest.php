@@ -2,70 +2,66 @@
 
 namespace MongoDB\Tests\Model;
 
+use MongoDB\BSON\Document;
 use MongoDB\BSON\Serializable;
 use MongoDB\Exception\InvalidArgumentException;
+use MongoDB\Model\BSONDocument;
 use MongoDB\Model\IndexInput;
 use MongoDB\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use stdClass;
 
 class IndexInputTest extends TestCase
 {
-    public function testConstructorShouldRequireKey()
+    public function testConstructorShouldRequireKey(): void
     {
         $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Required "key" document is missing from index specification');
         new IndexInput([]);
     }
 
-    public function testConstructorShouldRequireKeyToBeArrayOrObject()
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorShouldRequireKeyToBeArrayOrObject($key): void
     {
         $this->expectException(InvalidArgumentException::class);
-        new IndexInput(['key' => 'foo']);
+        $this->expectExceptionMessage('Expected "key" option to have type "document"');
+        new IndexInput(['key' => $key]);
     }
 
-    /**
-     * @dataProvider provideInvalidFieldOrderValues
-     */
-    public function testConstructorShouldRequireKeyFieldOrderToBeNumericOrString($order)
+    #[DataProvider('provideInvalidFieldOrderValues')]
+    public function testConstructorShouldRequireKeyFieldOrderToBeNumericOrString($order): void
     {
         $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Expected order value for "x" field within "key" option to have type "numeric or string"');
         new IndexInput(['key' => ['x' => $order]]);
     }
 
-    public function provideInvalidFieldOrderValues()
+    public static function provideInvalidFieldOrderValues()
     {
-        return $this->wrapValuesForDataProvider([true, [], new stdClass()]);
+        return self::wrapValuesForDataProvider([true, [], new stdClass()]);
     }
 
-    public function testConstructorShouldRequireNamespace()
-    {
-        $this->expectException(InvalidArgumentException::class);
-        new IndexInput(['key' => ['x' => 1]]);
-    }
-
-    public function testConstructorShouldRequireNamespaceToBeString()
+    #[DataProvider('provideInvalidStringValues')]
+    public function testConstructorShouldRequireNameToBeString($name): void
     {
         $this->expectException(InvalidArgumentException::class);
-        new IndexInput(['key' => ['x' => 1], 'ns' => 1]);
+        $this->expectExceptionMessage('Expected "name" option to have type "string"');
+        new IndexInput(['key' => ['x' => 1], 'name' => $name]);
     }
 
-    public function testConstructorShouldRequireNameToBeString()
+    #[DataProvider('provideExpectedNameAndKey')]
+    public function testNameGeneration($expectedName, array|object $key): void
     {
-        $this->expectException(InvalidArgumentException::class);
-        new IndexInput(['key' => ['x' => 1], 'ns' => 'foo.bar', 'name' => 1]);
+        $this->assertSame($expectedName, (string) new IndexInput(['key' => $key]));
     }
 
-    /**
-     * @dataProvider provideExpectedNameAndKey
-     */
-    public function testNameGeneration($expectedName, array $key)
-    {
-        $this->assertSame($expectedName, (string) new IndexInput(['key' => $key, 'ns' => 'foo.bar']));
-    }
-
-    public function provideExpectedNameAndKey()
+    public static function provideExpectedNameAndKey(): array
     {
         return [
             ['x_1', ['x' => 1]],
+            ['x_1', (object) ['x' => 1]],
+            ['x_1', new BSONDocument(['x' => 1])],
+            ['x_1', Document::fromPHP(['x' => 1])],
             ['x_1_y_-1', ['x' => 1, 'y' => -1]],
             ['loc_2dsphere', ['loc' => '2dsphere']],
             ['loc_2dsphere_x_1', ['loc' => '2dsphere', 'x' => 1]],
@@ -73,17 +69,17 @@ class IndexInputTest extends TestCase
         ];
     }
 
-    public function testBsonSerialization()
+    public function testBsonSerialization(): void
     {
-        $expected = [
+        $expected = (object) [
             'key' => ['x' => 1],
-            'ns' => 'foo.bar',
+            'unique' => true,
             'name' => 'x_1',
         ];
 
         $indexInput = new IndexInput([
             'key' => ['x' => 1],
-            'ns' => 'foo.bar',
+            'unique' => true,
         ]);
 
         $this->assertInstanceOf(Serializable::class, $indexInput);

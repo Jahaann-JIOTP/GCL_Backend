@@ -4,6 +4,8 @@ namespace MongoDB\Tests\Operation;
 
 use MongoDB\Exception\InvalidArgumentException;
 use MongoDB\Operation\Watch;
+use MongoDB\Tests\Fixtures\Codec\TestDocumentCodec;
+use PHPUnit\Framework\Attributes\DataProvider;
 use stdClass;
 
 /**
@@ -12,7 +14,7 @@ use stdClass;
  */
 class WatchTest extends FunctionalTestCase
 {
-    public function testConstructorCollectionNameShouldBeNullIfDatabaseNameIsNull()
+    public function testConstructorCollectionNameShouldBeNullIfDatabaseNameIsNull(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('$collectionName should also be null if $databaseName is null');
@@ -20,10 +22,10 @@ class WatchTest extends FunctionalTestCase
         new Watch($this->manager, null, 'foo', []);
     }
 
-    public function testConstructorPipelineArgumentMustBeAList()
+    public function testConstructorPipelineArgumentMustBeAList(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('$pipeline is not a list (unexpected index: "foo")');
+        $this->expectExceptionMessage('$pipeline is not a valid aggregation pipeline');
 
         /* Note: Watch uses array_unshift() to prepend the $changeStream stage
          * to the pipeline. Since array_unshift() reindexes numeric keys, we'll
@@ -31,63 +33,41 @@ class WatchTest extends FunctionalTestCase
         new Watch($this->manager, $this->getDatabaseName(), $this->getCollectionName(), ['foo' => ['$match' => ['x' => 1]]]);
     }
 
-    /**
-     * @dataProvider provideInvalidConstructorOptions
-     */
-    public function testConstructorOptionTypeChecks(array $options)
+    #[DataProvider('provideInvalidConstructorOptions')]
+    public function testConstructorOptionTypeChecks(array $options): void
     {
         $this->expectException(InvalidArgumentException::class);
         new Watch($this->manager, $this->getDatabaseName(), $this->getCollectionName(), [], $options);
     }
 
-    public function provideInvalidConstructorOptions()
+    public static function provideInvalidConstructorOptions()
     {
-        $options = [];
-
-        foreach ($this->getInvalidIntegerValues() as $value) {
-            $options[][] = ['batchSize' => $value];
-        }
-
-        foreach ($this->getInvalidDocumentValues() as $value) {
-            $options[][] = ['collation' => $value];
-        }
-
-        foreach ($this->getInvalidStringValues() as $value) {
-            $options[][] = ['fullDocument' => $value];
-        }
-
-        foreach ($this->getInvalidIntegerValues() as $value) {
-            $options[][] = ['maxAwaitTimeMS' => $value];
-        }
-
-        foreach ($this->getInvalidReadConcernValues() as $value) {
-            $options[][] = ['readConcern' => $value];
-        }
-
-        foreach ($this->getInvalidReadPreferenceValues() as $value) {
-            $options[][] = ['readPreference' => $value];
-        }
-
-        foreach ($this->getInvalidDocumentValues() as $value) {
-            $options[][] = ['resumeAfter' => $value];
-        }
-
-        foreach ($this->getInvalidSessionValues() as $value) {
-            $options[][] = ['session' => $value];
-        }
-
-        foreach ($this->getInvalidTimestampValues() as $value) {
-            $options[][] = ['startAtOperationTime' => $value];
-        }
-
-        foreach ($this->getInvalidArrayValues() as $value) {
-            $options[][] = ['typeMap' => $value];
-        }
-
-        return $options;
+        return self::createOptionDataProvider([
+            'batchSize' => self::getInvalidIntegerValues(),
+            'codec' => self::getInvalidDocumentCodecValues(),
+            'collation' => self::getInvalidDocumentValues(),
+            'fullDocument' => self::getInvalidStringValues(true),
+            'fullDocumentBeforeChange' => self::getInvalidStringValues(),
+            'maxAwaitTimeMS' => self::getInvalidIntegerValues(),
+            'readConcern' => self::getInvalidReadConcernValues(),
+            'readPreference' => self::getInvalidReadPreferenceValues(true),
+            'resumeAfter' => self::getInvalidDocumentValues(),
+            'session' => self::getInvalidSessionValues(),
+            'startAfter' => self::getInvalidDocumentValues(),
+            'startAtOperationTime' => self::getInvalidTimestampValues(),
+            'typeMap' => self::getInvalidArrayValues(),
+        ]);
     }
 
-    private function getInvalidTimestampValues()
+    public function testConstructorRejectsCodecAndTypemap(): void
+    {
+        $this->expectExceptionObject(InvalidArgumentException::cannotCombineCodecAndTypeMap());
+
+        $options = ['codec' => new TestDocumentCodec(), 'typeMap' => ['root' => 'array']];
+        new Watch($this->manager, $this->getDatabaseName(), $this->getCollectionName(), [], $options);
+    }
+
+    private static function getInvalidTimestampValues()
     {
         return [123, 3.14, 'foo', true, [], new stdClass()];
     }

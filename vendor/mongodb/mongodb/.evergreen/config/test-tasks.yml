@@ -1,0 +1,41 @@
+tasks:
+  - name: "test-atlas"
+    exec_timeout_secs: 1800
+    commands:
+      - func: "start kms servers"
+      - func: "run tests"
+        vars:
+          TESTS: "atlas"
+
+  - name: "test-serverless"
+    tags: ["serverless"]
+    exec_timeout_secs: 10800
+    commands:
+      - func: "start kms servers"
+      - func: "set aws temp creds"
+      - func: "run serverless tests"
+
+  - name: "test-serverless-proxy"
+    tags: ["serverless"]
+    exec_timeout_secs: 10800
+    commands:
+      - func: "start kms servers"
+      - func: "set aws temp creds"
+      - func: "run serverless tests"
+
+  - name: "test-atlas-data-lake"
+    commands:
+      - func: "bootstrap mongohoused"
+      - func: "run atlas data lake test"
+
+  - name: "run-benchmark"
+    exec_timeout_secs: 3600
+    commands:
+      - func: "bootstrap mongo-orchestration"
+        vars:
+          TOPOLOGY: "server"
+          MONGODB_VERSION: "v6.0-perf"
+      - func: "run benchmark"
+      - command: perf.send
+        params:
+          file: src/benchmark/.phpbench/results.json

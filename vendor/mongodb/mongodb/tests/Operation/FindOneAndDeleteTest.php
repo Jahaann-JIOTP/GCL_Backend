@@ -2,37 +2,64 @@
 
 namespace MongoDB\Tests\Operation;
 
+use MongoDB\BSON\PackedArray;
+use MongoDB\Driver\WriteConcern;
 use MongoDB\Exception\InvalidArgumentException;
 use MongoDB\Operation\FindOneAndDelete;
+use PHPUnit\Framework\Attributes\DataProvider;
+use TypeError;
 
 class FindOneAndDeleteTest extends TestCase
 {
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testConstructorFilterArgumentTypeCheck($filter)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorFilterArgumentTypeCheck($filter): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException($filter instanceof PackedArray ? InvalidArgumentException::class : TypeError::class);
         new FindOneAndDelete($this->getDatabaseName(), $this->getCollectionName(), $filter);
     }
 
-    /**
-     * @dataProvider provideInvalidConstructorOptions
-     */
-    public function testConstructorOptionTypeChecks(array $options)
+    #[DataProvider('provideInvalidConstructorOptions')]
+    public function testConstructorOptionTypeChecks(array $options): void
     {
         $this->expectException(InvalidArgumentException::class);
         new FindOneAndDelete($this->getDatabaseName(), $this->getCollectionName(), [], $options);
     }
 
-    public function provideInvalidConstructorOptions()
+    public static function provideInvalidConstructorOptions()
     {
-        $options = [];
+        return self::createOptionDataProvider([
+            'projection' => self::getInvalidDocumentValues(),
+        ]);
+    }
 
-        foreach ($this->getInvalidDocumentValues() as $value) {
-            $options[][] = ['projection' => $value];
-        }
+    public function testExplainableCommandDocument(): void
+    {
+        $options = [
+            'collation' => ['locale' => 'fr'],
+            'comment' => 'explain me',
+            'hint' => '_id_',
+            'maxTimeMS' => 100,
+            'sort' => ['x' => 1],
+            'let' => ['a' => 3],
+            // Intentionally omitted options
+            'projection' => ['_id' => 0],
+            'typeMap' => ['root' => 'array'],
+            'writeConcern' => new WriteConcern(WriteConcern::MAJORITY),
+        ];
+        $operation = new FindOneAndDelete($this->getDatabaseName(), $this->getCollectionName(), ['y' => 2], $options);
 
-        return $options;
+        $expected = [
+            'findAndModify' => $this->getCollectionName(),
+            'collation' => (object) ['locale' => 'fr'],
+            'fields' => (object) ['_id' => 0],
+            'let' => (object) ['a' => 3],
+            'query' => (object) ['y' => 2],
+            'sort' => (object) ['x' => 1],
+            'comment' => 'explain me',
+            'hint' => '_id_',
+            'maxTimeMS' => 100,
+            'remove' => true,
+        ];
+        $this->assertEquals($expected, $operation->getCommandDocument());
     }
 }

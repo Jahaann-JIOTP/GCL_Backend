@@ -1,12 +1,12 @@
 <?php
 /*
- * Copyright 2015-2017 MongoDB, Inc.
+ * Copyright 2015-present MongoDB, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,32 +17,16 @@
 
 namespace MongoDB;
 
+use MongoDB\Driver\Exception\LogicException;
 use MongoDB\Driver\WriteResult;
-use MongoDB\Exception\BadMethodCallException;
 
 /**
  * Result class for a multi-document insert operation.
  */
 class InsertManyResult
 {
-    /** @var WriteResult */
-    private $writeResult;
-
-    /** @var mixed[] */
-    private $insertedIds;
-
-    /** @var boolean */
-    private $isAcknowledged;
-
-    /**
-     * @param WriteResult $writeResult
-     * @param mixed[]     $insertedIds
-     */
-    public function __construct(WriteResult $writeResult, array $insertedIds)
+    public function __construct(private WriteResult $writeResult, private array $insertedIds)
     {
-        $this->writeResult = $writeResult;
-        $this->insertedIds = $insertedIds;
-        $this->isAcknowledged = $writeResult->isAcknowledged();
     }
 
     /**
@@ -51,16 +35,11 @@ class InsertManyResult
      * This method should only be called if the write was acknowledged.
      *
      * @see InsertManyResult::isAcknowledged()
-     * @return integer
-     * @throws BadMethodCallException is the write result is unacknowledged
+     * @throws LogicException if the write result is unacknowledged
      */
-    public function getInsertedCount()
+    public function getInsertedCount(): int
     {
-        if ($this->isAcknowledged) {
-            return $this->writeResult->getInsertedCount();
-        }
-
-        throw BadMethodCallException::unacknowledgedWriteResultAccess(__METHOD__);
+        return $this->writeResult->getInsertedCount();
     }
 
     /**
@@ -71,10 +50,8 @@ class InsertManyResult
      * the driver did not generate an ID), the index will contain its "_id"
      * field value. Any driver-generated ID will be a MongoDB\BSON\ObjectId
      * instance.
-     *
-     * @return mixed[]
      */
-    public function getInsertedIds()
+    public function getInsertedIds(): array
     {
         return $this->insertedIds;
     }
@@ -84,10 +61,8 @@ class InsertManyResult
      *
      * If the insert was not acknowledged, other fields from the WriteResult
      * (e.g. insertedCount) will be undefined.
-     *
-     * @return boolean
      */
-    public function isAcknowledged()
+    public function isAcknowledged(): bool
     {
         return $this->writeResult->isAcknowledged();
     }

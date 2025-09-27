@@ -2,6 +2,9 @@
 
 namespace MongoDB\Tests\Database;
 
+use MongoDB\BSON\PackedArray;
+use MongoDB\Codec\Encoder;
+use MongoDB\Collection;
 use MongoDB\Database;
 use MongoDB\Driver\BulkWrite;
 use MongoDB\Driver\Cursor;
@@ -10,6 +13,10 @@ use MongoDB\Driver\ReadPreference;
 use MongoDB\Driver\WriteConcern;
 use MongoDB\Exception\InvalidArgumentException;
 use MongoDB\Operation\CreateIndexes;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use TypeError;
+
 use function array_key_exists;
 use function current;
 
@@ -18,76 +25,60 @@ use function current;
  */
 class DatabaseFunctionalTest extends FunctionalTestCase
 {
-    /**
-     * @dataProvider provideInvalidDatabaseNames
-     */
-    public function testConstructorDatabaseNameArgument($databaseName)
+    #[DataProvider('provideInvalidDatabaseNames')]
+    public function testConstructorDatabaseNameArgument($databaseName, string $expectedExceptionClass): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException($expectedExceptionClass);
         // TODO: Move to unit test once ManagerInterface can be mocked (PHPC-378)
         new Database($this->manager, $databaseName);
     }
 
-    public function provideInvalidDatabaseNames()
+    public static function provideInvalidDatabaseNames()
     {
         return [
-            [null],
-            [''],
+            [null, TypeError::class],
+            ['', InvalidArgumentException::class],
         ];
     }
 
-    /**
-     * @dataProvider provideInvalidConstructorOptions
-     */
-    public function testConstructorOptionTypeChecks(array $options)
+    #[DataProvider('provideInvalidConstructorOptions')]
+    public function testConstructorOptionTypeChecks(array $options): void
     {
         $this->expectException(InvalidArgumentException::class);
         new Database($this->manager, $this->getDatabaseName(), $options);
     }
 
-    public function provideInvalidConstructorOptions()
+    public static function provideInvalidConstructorOptions()
     {
-        $options = [];
-
-        foreach ($this->getInvalidReadConcernValues() as $value) {
-            $options[][] = ['readConcern' => $value];
-        }
-
-        foreach ($this->getInvalidReadPreferenceValues() as $value) {
-            $options[][] = ['readPreference' => $value];
-        }
-
-        foreach ($this->getInvalidArrayValues() as $value) {
-            $options[][] = ['typeMap' => $value];
-        }
-
-        foreach ($this->getInvalidWriteConcernValues() as $value) {
-            $options[][] = ['writeConcern' => $value];
-        }
-
-        return $options;
+        return self::createOptionDataProvider([
+            'builderEncoder' => self::getInvalidObjectValues(),
+            'readConcern' => self::getInvalidReadConcernValues(),
+            'readPreference' => self::getInvalidReadPreferenceValues(),
+            'typeMap' => self::getInvalidArrayValues(),
+            'writeConcern' => self::getInvalidWriteConcernValues(),
+        ]);
     }
 
-    public function testGetManager()
+    public function testGetManager(): void
     {
         $this->assertSame($this->manager, $this->database->getManager());
     }
 
-    public function testToString()
+    public function testToString(): void
     {
         $this->assertEquals($this->getDatabaseName(), (string) $this->database);
     }
 
-    public function getGetDatabaseName()
+    public function getGetDatabaseName(): void
     {
         $this->assertEquals($this->getDatabaseName(), $this->database->getDatabaseName());
     }
 
-    public function testCommand()
+    public function testCommand(): void
     {
-        $command = ['isMaster' => 1];
+        $command = ['ping' => 1];
         $options = [
-            'readPreference' => new ReadPreference(ReadPreference::RP_PRIMARY),
+            'readPreference' => new ReadPreference(ReadPreference::PRIMARY),
         ];
 
         $cursor = $this->database->command($command, $options);
@@ -96,15 +87,31 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         $commandResult = current($cursor->toArray());
 
         $this->assertCommandSucceeded($commandResult);
-        $this->assertObjectHasAttribute('ismaster', $commandResult);
-        $this->assertTrue($commandResult->ismaster);
+        $this->assertObjectHasProperty('ok', $commandResult);
+        $this->assertSame(1, (int) $commandResult->ok);
     }
 
-    public function testCommandAppliesTypeMapToCursor()
+    public function testCommandDoesNotInheritReadPreference(): void
     {
-        $command = ['isMaster' => 1];
+        if (! $this->isReplicaSet()) {
+            $this->markTestSkipped('Test only applies to replica sets');
+        }
+
+        $this->database = new Database($this->manager, $this->getDatabaseName(), ['readPreference' => new ReadPreference(ReadPreference::SECONDARY)]);
+
+        $command = ['ping' => 1];
+
+        $cursor = $this->database->command($command);
+
+        $this->assertInstanceOf(Cursor::class, $cursor);
+        $this->assertTrue($cursor->getServer()->isPrimary());
+    }
+
+    public function testCommandAppliesTypeMapToCursor(): void
+    {
+        $command = ['ping' => 1];
         $options = [
-            'readPreference' => new ReadPreference(ReadPreference::RP_PRIMARY),
+            'readPreference' => new ReadPreference(ReadPreference::PRIMARY),
             'typeMap' => ['root' => 'array'],
         ];
 
@@ -115,20 +122,18 @@ class DatabaseFunctionalTest extends FunctionalTestCase
 
         $this->assertCommandSucceeded($commandResult);
         $this->assertIsArray($commandResult);
-        $this->assertArrayHasKey('ismaster', $commandResult);
-        $this->assertTrue($commandResult['ismaster']);
+        $this->assertArrayHasKey('ok', $commandResult);
+        $this->assertSame(1, (int) $commandResult['ok']);
     }
 
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testCommandCommandArgumentTypeCheck($command)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testCommandCommandArgumentTypeCheck($command): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException($command instanceof PackedArray ? InvalidArgumentException::class : TypeError::class);
         $this->database->command($command);
     }
 
-    public function testDrop()
+    public function testDrop(): void
     {
         $bulkWrite = new BulkWrite();
         $bulkWrite->insert(['x' => 1]);
@@ -136,12 +141,23 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         $writeResult = $this->manager->executeBulkWrite($this->getNamespace(), $bulkWrite);
         $this->assertEquals(1, $writeResult->getInsertedCount());
 
-        $commandResult = $this->database->drop();
-        $this->assertCommandSucceeded($commandResult);
+        $this->database->drop();
         $this->assertCollectionCount($this->getNamespace(), 0);
     }
 
-    public function testGetSelectsCollectionAndInheritsOptions()
+    public function testDropCollection(): void
+    {
+        $bulkWrite = new BulkWrite();
+        $bulkWrite->insert(['x' => 1]);
+
+        $writeResult = $this->manager->executeBulkWrite($this->getNamespace(), $bulkWrite);
+        $this->assertEquals(1, $writeResult->getInsertedCount());
+
+        $this->database->dropCollection($this->getCollectionName());
+        $this->assertCollectionDoesNotExist($this->getCollectionName());
+    }
+
+    public function testGetSelectsCollectionAndInheritsOptions(): void
     {
         $databaseOptions = ['writeConcern' => new WriteConcern(WriteConcern::MAJORITY)];
 
@@ -156,7 +172,10 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         $this->assertSame(WriteConcern::MAJORITY, $debug['writeConcern']->getW());
     }
 
-    public function testModifyCollection()
+    #[Group('matrix-testing-exclude-server-4.2-driver-4.0-topology-sharded_cluster')]
+    #[Group('matrix-testing-exclude-server-4.4-driver-4.0-topology-sharded_cluster')]
+    #[Group('matrix-testing-exclude-server-5.0-driver-4.0-topology-sharded_cluster')]
+    public function testModifyCollection(): void
     {
         $this->database->createCollection($this->getCollectionName());
 
@@ -167,7 +186,7 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         $commandResult = $this->database->modifyCollection(
             $this->getCollectionName(),
             ['index' => ['keyPattern' => ['lastAccess' => 1], 'expireAfterSeconds' => 1000]],
-            ['typeMap' => ['root' => 'array', 'document' => 'array']]
+            ['typeMap' => ['root' => 'array', 'document' => 'array']],
         );
         $this->assertCommandSucceeded($commandResult);
 
@@ -189,11 +208,71 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         }
     }
 
-    public function testSelectCollectionInheritsOptions()
+    public function testRenameCollectionToSameDatabase(): void
+    {
+        $toCollectionName = $this->getCollectionName() . '.renamed';
+        $toCollection = new Collection($this->manager, $this->getDatabaseName(), $toCollectionName);
+
+        $bulkWrite = new BulkWrite();
+        $bulkWrite->insert(['_id' => 1]);
+
+        $writeResult = $this->manager->executeBulkWrite($this->getNamespace(), $bulkWrite);
+        $this->assertEquals(1, $writeResult->getInsertedCount());
+
+        $this->database->renameCollection(
+            $this->getCollectionName(),
+            $toCollectionName,
+            null,
+            ['dropTarget' => true],
+        );
+        $this->assertCollectionDoesNotExist($this->getCollectionName());
+        $this->assertCollectionExists($toCollectionName);
+
+        $this->assertSameDocument(['_id' => 1], $toCollection->findOne());
+        $toCollection->drop();
+    }
+
+    public function testRenameCollectionToDifferentDatabase(): void
+    {
+        $toDatabaseName = $this->getDatabaseName() . '_renamed';
+        $toDatabase = new Database($this->manager, $toDatabaseName);
+
+        /* When renaming an unsharded collection, mongos requires the source
+        * and target database to both exist on the primary shard. In practice, this
+        * means we need to create the target database explicitly.
+        * See: https://mongodb.com/docs/manual/reference/command/renameCollection/#unsharded-collections
+        */
+        if ($this->isShardedCluster()) {
+            $toDatabase->foo->insertOne(['_id' => 1]);
+        }
+
+        $toCollectionName = $this->getCollectionName() . '.renamed';
+        $toCollection = new Collection($this->manager, $toDatabaseName, $toCollectionName);
+
+        $bulkWrite = new BulkWrite();
+        $bulkWrite->insert(['_id' => 1]);
+
+        $writeResult = $this->manager->executeBulkWrite($this->getNamespace(), $bulkWrite);
+        $this->assertEquals(1, $writeResult->getInsertedCount());
+
+        $this->database->renameCollection(
+            $this->getCollectionName(),
+            $toCollectionName,
+            $toDatabaseName,
+        );
+        $this->assertCollectionDoesNotExist($this->getCollectionName());
+        $this->assertCollectionExists($toCollectionName, $toDatabaseName);
+
+        $this->assertSameDocument(['_id' => 1], $toCollection->findOne());
+
+        $toDatabase->drop();
+    }
+
+    public function testSelectCollectionInheritsOptions(): void
     {
         $databaseOptions = [
             'readConcern' => new ReadConcern(ReadConcern::LOCAL),
-            'readPreference' => new ReadPreference(ReadPreference::RP_SECONDARY_PREFERRED),
+            'readPreference' => new ReadPreference(ReadPreference::SECONDARY_PREFERRED),
             'typeMap' => ['root' => 'array'],
             'writeConcern' => new WriteConcern(WriteConcern::MAJORITY),
         ];
@@ -208,18 +287,18 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         $this->assertInstanceOf(ReadConcern::class, $debug['readConcern']);
         $this->assertSame(ReadConcern::LOCAL, $debug['readConcern']->getLevel());
         $this->assertInstanceOf(ReadPreference::class, $debug['readPreference']);
-        $this->assertSame(ReadPreference::RP_SECONDARY_PREFERRED, $debug['readPreference']->getMode());
+        $this->assertSame(ReadPreference::SECONDARY_PREFERRED, $debug['readPreference']->getModeString());
         $this->assertIsArray($debug['typeMap']);
         $this->assertSame(['root' => 'array'], $debug['typeMap']);
         $this->assertInstanceOf(WriteConcern::class, $debug['writeConcern']);
         $this->assertSame(WriteConcern::MAJORITY, $debug['writeConcern']->getW());
     }
 
-    public function testSelectCollectionPassesOptions()
+    public function testSelectCollectionPassesOptions(): void
     {
         $collectionOptions = [
             'readConcern' => new ReadConcern(ReadConcern::LOCAL),
-            'readPreference' => new ReadPreference(ReadPreference::RP_SECONDARY_PREFERRED),
+            'readPreference' => new ReadPreference(ReadPreference::SECONDARY_PREFERRED),
             'typeMap' => ['root' => 'array'],
             'writeConcern' => new WriteConcern(WriteConcern::MAJORITY),
         ];
@@ -230,18 +309,18 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         $this->assertInstanceOf(ReadConcern::class, $debug['readConcern']);
         $this->assertSame(ReadConcern::LOCAL, $debug['readConcern']->getLevel());
         $this->assertInstanceOf(ReadPreference::class, $debug['readPreference']);
-        $this->assertSame(ReadPreference::RP_SECONDARY_PREFERRED, $debug['readPreference']->getMode());
+        $this->assertSame(ReadPreference::SECONDARY_PREFERRED, $debug['readPreference']->getModeString());
         $this->assertIsArray($debug['typeMap']);
         $this->assertSame(['root' => 'array'], $debug['typeMap']);
         $this->assertInstanceOf(WriteConcern::class, $debug['writeConcern']);
         $this->assertSame(WriteConcern::MAJORITY, $debug['writeConcern']->getW());
     }
 
-    public function testSelectGridFSBucketInheritsOptions()
+    public function testSelectGridFSBucketInheritsOptions(): void
     {
         $databaseOptions = [
             'readConcern' => new ReadConcern(ReadConcern::LOCAL),
-            'readPreference' => new ReadPreference(ReadPreference::RP_SECONDARY_PREFERRED),
+            'readPreference' => new ReadPreference(ReadPreference::SECONDARY_PREFERRED),
             'writeConcern' => new WriteConcern(WriteConcern::MAJORITY),
         ];
 
@@ -256,18 +335,18 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         $this->assertInstanceOf(ReadConcern::class, $debug['readConcern']);
         $this->assertSame(ReadConcern::LOCAL, $debug['readConcern']->getLevel());
         $this->assertInstanceOf(ReadPreference::class, $debug['readPreference']);
-        $this->assertSame(ReadPreference::RP_SECONDARY_PREFERRED, $debug['readPreference']->getMode());
+        $this->assertSame(ReadPreference::SECONDARY_PREFERRED, $debug['readPreference']->getModeString());
         $this->assertInstanceOf(WriteConcern::class, $debug['writeConcern']);
         $this->assertSame(WriteConcern::MAJORITY, $debug['writeConcern']->getW());
     }
 
-    public function testSelectGridFSBucketPassesOptions()
+    public function testSelectGridFSBucketPassesOptions(): void
     {
         $bucketOptions = [
             'bucketName' => 'custom_fs',
             'chunkSizeBytes' => 8192,
             'readConcern' => new ReadConcern(ReadConcern::LOCAL),
-            'readPreference' => new ReadPreference(ReadPreference::RP_SECONDARY_PREFERRED),
+            'readPreference' => new ReadPreference(ReadPreference::SECONDARY_PREFERRED),
             'writeConcern' => new WriteConcern(WriteConcern::MAJORITY),
         ];
 
@@ -281,16 +360,17 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         $this->assertInstanceOf(ReadConcern::class, $debug['readConcern']);
         $this->assertSame(ReadConcern::LOCAL, $debug['readConcern']->getLevel());
         $this->assertInstanceOf(ReadPreference::class, $debug['readPreference']);
-        $this->assertSame(ReadPreference::RP_SECONDARY_PREFERRED, $debug['readPreference']->getMode());
+        $this->assertSame(ReadPreference::SECONDARY_PREFERRED, $debug['readPreference']->getModeString());
         $this->assertInstanceOf(WriteConcern::class, $debug['writeConcern']);
         $this->assertSame(WriteConcern::MAJORITY, $debug['writeConcern']->getW());
     }
 
-    public function testWithOptionsInheritsOptions()
+    public function testWithOptionsInheritsOptions(): void
     {
         $databaseOptions = [
+            'builderEncoder' => $this->createMock(Encoder::class),
             'readConcern' => new ReadConcern(ReadConcern::LOCAL),
-            'readPreference' => new ReadPreference(ReadPreference::RP_SECONDARY_PREFERRED),
+            'readPreference' => new ReadPreference(ReadPreference::SECONDARY_PREFERRED),
             'typeMap' => ['root' => 'array'],
             'writeConcern' => new WriteConcern(WriteConcern::MAJORITY),
         ];
@@ -301,21 +381,18 @@ class DatabaseFunctionalTest extends FunctionalTestCase
 
         $this->assertSame($this->manager, $debug['manager']);
         $this->assertSame($this->getDatabaseName(), $debug['databaseName']);
-        $this->assertInstanceOf(ReadConcern::class, $debug['readConcern']);
-        $this->assertSame(ReadConcern::LOCAL, $debug['readConcern']->getLevel());
-        $this->assertInstanceOf(ReadPreference::class, $debug['readPreference']);
-        $this->assertSame(ReadPreference::RP_SECONDARY_PREFERRED, $debug['readPreference']->getMode());
-        $this->assertIsArray($debug['typeMap']);
-        $this->assertSame(['root' => 'array'], $debug['typeMap']);
-        $this->assertInstanceOf(WriteConcern::class, $debug['writeConcern']);
-        $this->assertSame(WriteConcern::MAJORITY, $debug['writeConcern']->getW());
+
+        foreach ($databaseOptions as $key => $value) {
+            $this->assertSame($value, $debug[$key]);
+        }
     }
 
-    public function testWithOptionsPassesOptions()
+    public function testWithOptionsPassesOptions(): void
     {
         $databaseOptions = [
+            'builderEncoder' => $this->createMock(Encoder::class),
             'readConcern' => new ReadConcern(ReadConcern::LOCAL),
-            'readPreference' => new ReadPreference(ReadPreference::RP_SECONDARY_PREFERRED),
+            'readPreference' => new ReadPreference(ReadPreference::SECONDARY_PREFERRED),
             'typeMap' => ['root' => 'array'],
             'writeConcern' => new WriteConcern(WriteConcern::MAJORITY),
         ];
@@ -323,13 +400,8 @@ class DatabaseFunctionalTest extends FunctionalTestCase
         $clone = $this->database->withOptions($databaseOptions);
         $debug = $clone->__debugInfo();
 
-        $this->assertInstanceOf(ReadConcern::class, $debug['readConcern']);
-        $this->assertSame(ReadConcern::LOCAL, $debug['readConcern']->getLevel());
-        $this->assertInstanceOf(ReadPreference::class, $debug['readPreference']);
-        $this->assertSame(ReadPreference::RP_SECONDARY_PREFERRED, $debug['readPreference']->getMode());
-        $this->assertIsArray($debug['typeMap']);
-        $this->assertSame(['root' => 'array'], $debug['typeMap']);
-        $this->assertInstanceOf(WriteConcern::class, $debug['writeConcern']);
-        $this->assertSame(WriteConcern::MAJORITY, $debug['writeConcern']->getW());
+        foreach ($databaseOptions as $key => $value) {
+            $this->assertSame($value, $debug[$key]);
+        }
     }
 }

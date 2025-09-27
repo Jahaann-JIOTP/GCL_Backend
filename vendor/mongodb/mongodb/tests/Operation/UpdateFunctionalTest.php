@@ -5,102 +5,168 @@ namespace MongoDB\Tests\Operation;
 use MongoDB\BSON\ObjectId;
 use MongoDB\Collection;
 use MongoDB\Driver\BulkWrite;
+use MongoDB\Driver\Exception\LogicException;
 use MongoDB\Driver\WriteConcern;
-use MongoDB\Exception\BadMethodCallException;
+use MongoDB\Exception\UnsupportedException;
 use MongoDB\Operation\Update;
 use MongoDB\Tests\CommandObserver;
 use MongoDB\UpdateResult;
-use Symfony\Bridge\PhpUnit\SetUpTearDownTrait;
-use function version_compare;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Depends;
+use stdClass;
+
+use function is_array;
 
 class UpdateFunctionalTest extends FunctionalTestCase
 {
-    use SetUpTearDownTrait;
+    private Collection $collection;
 
-    /** @var Collection */
-    private $collection;
-
-    private function doSetUp()
+    public function setUp(): void
     {
         parent::setUp();
 
         $this->collection = new Collection($this->manager, $this->getDatabaseName(), $this->getCollectionName());
     }
 
-    public function testSessionOption()
+    #[DataProvider('provideFilterDocuments')]
+    public function testFilterDocuments($filter, stdClass $expectedFilter): void
     {
-        if (version_compare($this->getServerVersion(), '3.6.0', '<')) {
-            $this->markTestSkipped('Sessions are not supported');
-        }
-
         (new CommandObserver())->observe(
-            function () {
+            function () use ($filter): void {
                 $operation = new Update(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
-                    ['_id' => 1],
-                    ['$inc' => ['x' => 1]],
-                    ['session' => $this->createSession()]
+                    $filter,
+                    ['$set' => ['x' => 1]],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectHasAttribute('lsid', $event['started']->getCommand());
-            }
+            function (array $event) use ($expectedFilter): void {
+                $this->assertEquals($expectedFilter, $event['started']->getCommand()->updates[0]->q ?? null);
+            },
         );
     }
 
-    public function testBypassDocumentValidationSetWhenTrue()
+    #[DataProvider('provideReplacementDocuments')]
+    #[DataProvider('provideUpdateDocuments')]
+    #[DataProvider('provideUpdatePipelines')]
+    #[DataProvider('provideReplacementDocumentLikePipeline')]
+    public function testUpdateDocuments($update, $expectedUpdate): void
     {
-        if (version_compare($this->getServerVersion(), '3.2.0', '<')) {
-            $this->markTestSkipped('bypassDocumentValidation is not supported');
+        if (is_array($expectedUpdate)) {
+            $this->skipIfServerVersion('<', '4.2.0', 'Pipeline-style updates are not supported');
         }
 
         (new CommandObserver())->observe(
-            function () {
+            function () use ($update): void {
+                $operation = new Update(
+                    $this->getDatabaseName(),
+                    $this->getCollectionName(),
+                    ['x' => 1],
+                    $update,
+                );
+
+                $operation->execute($this->getPrimaryServer());
+            },
+            function (array $event) use ($expectedUpdate): void {
+                $this->assertEquals($expectedUpdate, $event['started']->getCommand()->updates[0]->u ?? null);
+            },
+        );
+    }
+
+    public static function provideReplacementDocumentLikePipeline(): array
+    {
+        /* Note: libmongoc encodes this replacement document as a BSON array
+         * because it resembles an update pipeline (see: CDRIVER-4658). */
+        return [
+            'replacement_like_pipeline' => [
+                (object) ['0' => ['$set' => ['x' => 1]]],
+                [(object) ['$set' => (object) ['x' => 1]]],
+            ],
+        ];
+    }
+
+    public function testSessionOption(): void
+    {
+        (new CommandObserver())->observe(
+            function (): void {
                 $operation = new Update(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
                     ['_id' => 1],
                     ['$inc' => ['x' => 1]],
-                    ['bypassDocumentValidation' => true]
+                    ['session' => $this->createSession()],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectHasAttribute('bypassDocumentValidation', $event['started']->getCommand());
+            function (array $event): void {
+                $this->assertObjectHasProperty('lsid', $event['started']->getCommand());
+            },
+        );
+    }
+
+    public function testBypassDocumentValidationSetWhenTrue(): void
+    {
+        (new CommandObserver())->observe(
+            function (): void {
+                $operation = new Update(
+                    $this->getDatabaseName(),
+                    $this->getCollectionName(),
+                    ['_id' => 1],
+                    ['$inc' => ['x' => 1]],
+                    ['bypassDocumentValidation' => true],
+                );
+
+                $operation->execute($this->getPrimaryServer());
+            },
+            function (array $event): void {
+                $this->assertObjectHasProperty('bypassDocumentValidation', $event['started']->getCommand());
                 $this->assertEquals(true, $event['started']->getCommand()->bypassDocumentValidation);
-            }
+            },
         );
     }
 
-    public function testBypassDocumentValidationUnsetWhenFalse()
+    public function testBypassDocumentValidationUnsetWhenFalse(): void
     {
-        if (version_compare($this->getServerVersion(), '3.2.0', '<')) {
-            $this->markTestSkipped('bypassDocumentValidation is not supported');
-        }
-
         (new CommandObserver())->observe(
-            function () {
+            function (): void {
                 $operation = new Update(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
                     ['_id' => 1],
                     ['$inc' => ['x' => 1]],
-                    ['bypassDocumentValidation' => false]
+                    ['bypassDocumentValidation' => false],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectNotHasAttribute('bypassDocumentValidation', $event['started']->getCommand());
-            }
+            function (array $event): void {
+                $this->assertObjectNotHasProperty('bypassDocumentValidation', $event['started']->getCommand());
+            },
         );
     }
 
-    public function testUpdateOne()
+    public function testHintOptionAndUnacknowledgedWriteConcernUnsupportedClientSideError(): void
+    {
+        $this->skipIfServerVersion('>=', '4.2.0', 'hint is supported');
+
+        $operation = new Update(
+            $this->getDatabaseName(),
+            $this->getCollectionName(),
+            ['_id' => 1],
+            ['$inc' => ['x' => 1]],
+            ['hint' => '_id_', 'writeConcern' => new WriteConcern(0)],
+        );
+
+        $this->expectException(UnsupportedException::class);
+        $this->expectExceptionMessage('Hint is not supported by the server executing this operation');
+
+        $operation->execute($this->getPrimaryServer());
+    }
+
+    public function testUpdateOne(): void
     {
         $this->createFixtures(3);
 
@@ -125,7 +191,7 @@ class UpdateFunctionalTest extends FunctionalTestCase
         $this->assertSameDocuments($expected, $this->collection->find());
     }
 
-    public function testUpdateMany()
+    public function testUpdateMany(): void
     {
         $this->createFixtures(3);
 
@@ -151,7 +217,7 @@ class UpdateFunctionalTest extends FunctionalTestCase
         $this->assertSameDocuments($expected, $this->collection->find());
     }
 
-    public function testUpdateManyWithExistingId()
+    public function testUpdateManyWithExistingId(): void
     {
         $this->createFixtures(3);
 
@@ -178,7 +244,7 @@ class UpdateFunctionalTest extends FunctionalTestCase
         $this->assertSameDocuments($expected, $this->collection->find());
     }
 
-    public function testUpdateManyWithGeneratedId()
+    public function testUpdateManyWithGeneratedId(): void
     {
         $this->createFixtures(3);
 
@@ -218,52 +284,42 @@ class UpdateFunctionalTest extends FunctionalTestCase
         return $result;
     }
 
-    /**
-     * @depends testUnacknowledgedWriteConcern
-     */
-    public function testUnacknowledgedWriteConcernAccessesMatchedCount(UpdateResult $result)
+    #[Depends('testUnacknowledgedWriteConcern')]
+    public function testUnacknowledgedWriteConcernAccessesMatchedCount(UpdateResult $result): void
     {
-        $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessageRegExp('/[\w:\\\\]+ should not be called for an unacknowledged write result/');
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessageMatches('/[\w:\\\\\(\)]+ should not be called for an unacknowledged write result/');
         $result->getMatchedCount();
     }
 
-    /**
-     * @depends testUnacknowledgedWriteConcern
-     */
-    public function testUnacknowledgedWriteConcernAccessesModifiedCount(UpdateResult $result)
+    #[Depends('testUnacknowledgedWriteConcern')]
+    public function testUnacknowledgedWriteConcernAccessesModifiedCount(UpdateResult $result): void
     {
-        $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessageRegExp('/[\w:\\\\]+ should not be called for an unacknowledged write result/');
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessageMatches('/[\w:\\\\\(\)]+ should not be called for an unacknowledged write result/');
         $result->getModifiedCount();
     }
 
-    /**
-     * @depends testUnacknowledgedWriteConcern
-     */
-    public function testUnacknowledgedWriteConcernAccessesUpsertedCount(UpdateResult $result)
+    #[Depends('testUnacknowledgedWriteConcern')]
+    public function testUnacknowledgedWriteConcernAccessesUpsertedCount(UpdateResult $result): void
     {
-        $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessageRegExp('/[\w:\\\\]+ should not be called for an unacknowledged write result/');
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessageMatches('/[\w:\\\\\(\)]+ should not be called for an unacknowledged write result/');
         $result->getUpsertedCount();
     }
 
-    /**
-     * @depends testUnacknowledgedWriteConcern
-     */
-    public function testUnacknowledgedWriteConcernAccessesUpsertedId(UpdateResult $result)
+    #[Depends('testUnacknowledgedWriteConcern')]
+    public function testUnacknowledgedWriteConcernAccessesUpsertedId(UpdateResult $result): void
     {
-        $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessageRegExp('/[\w:\\\\]+ should not be called for an unacknowledged write result/');
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessageMatches('/[\w:\\\\\(\)]+ should not be called for an unacknowledged write result/');
         $result->getUpsertedId();
     }
 
     /**
      * Create data fixtures.
-     *
-     * @param integer $n
      */
-    private function createFixtures($n)
+    private function createFixtures(int $n): void
     {
         $bulkWrite = new BulkWrite(['ordered' => true]);
 

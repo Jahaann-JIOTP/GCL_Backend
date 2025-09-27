@@ -4,16 +4,38 @@ namespace MongoDB\Tests\Operation;
 
 use MongoDB\Operation\CountDocuments;
 use MongoDB\Operation\InsertMany;
+use MongoDB\Tests\CommandObserver;
+use PHPUnit\Framework\Attributes\DataProvider;
+use stdClass;
 
 class CountDocumentsFunctionalTest extends FunctionalTestCase
 {
-    public function testEmptyCollection()
+    #[DataProvider('provideFilterDocuments')]
+    public function testFilterDocuments($filter, stdClass $expectedMatchStage): void
+    {
+        (new CommandObserver())->observe(
+            function () use ($filter): void {
+                $operation = new CountDocuments(
+                    $this->getDatabaseName(),
+                    $this->getCollectionName(),
+                    $filter,
+                );
+
+                $operation->execute($this->getPrimaryServer());
+            },
+            function (array $event) use ($expectedMatchStage): void {
+                $this->assertEquals($expectedMatchStage, $event['started']->getCommand()->pipeline[0]->{'$match'} ?? null);
+            },
+        );
+    }
+
+    public function testEmptyCollection(): void
     {
         $operation = new CountDocuments($this->getDatabaseName(), $this->getCollectionName(), []);
         $this->assertSame(0, $operation->execute($this->getPrimaryServer()));
     }
 
-    public function testNonEmptyCollection()
+    public function testNonEmptyCollection(): void
     {
         $insertMany = new InsertMany($this->getDatabaseName(), $this->getCollectionName(), [
             ['x' => 1],

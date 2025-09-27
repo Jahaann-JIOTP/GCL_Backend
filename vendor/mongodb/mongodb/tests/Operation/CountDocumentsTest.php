@@ -2,70 +2,39 @@
 
 namespace MongoDB\Tests\Operation;
 
+use MongoDB\BSON\PackedArray;
 use MongoDB\Exception\InvalidArgumentException;
 use MongoDB\Operation\CountDocuments;
+use PHPUnit\Framework\Attributes\DataProvider;
+use TypeError;
 
 class CountDocumentsTest extends TestCase
 {
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testConstructorFilterArgumentTypeCheck($filter)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorFilterArgumentTypeCheck($filter): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException($filter instanceof PackedArray ? InvalidArgumentException::class : TypeError::class);
         new CountDocuments($this->getDatabaseName(), $this->getCollectionName(), $filter);
     }
 
-    /**
-     * @dataProvider provideInvalidConstructorOptions
-     */
-    public function testConstructorOptionTypeChecks(array $options)
+    #[DataProvider('provideInvalidConstructorOptions')]
+    public function testConstructorOptionTypeChecks(array $options): void
     {
         $this->expectException(InvalidArgumentException::class);
         new CountDocuments($this->getDatabaseName(), $this->getCollectionName(), [], $options);
     }
 
-    public function provideInvalidConstructorOptions()
+    public static function provideInvalidConstructorOptions()
     {
-        $options = [];
-
-        foreach ($this->getInvalidDocumentValues() as $value) {
-            $options[][] = ['collation' => $value];
-        }
-
-        foreach ($this->getInvalidHintValues() as $value) {
-            $options[][] = ['hint' => $value];
-        }
-
-        foreach ($this->getInvalidIntegerValues() as $value) {
-            $options[][] = ['limit' => $value];
-        }
-
-        foreach ($this->getInvalidIntegerValues() as $value) {
-            $options[][] = ['maxTimeMS' => $value];
-        }
-
-        foreach ($this->getInvalidReadConcernValues() as $value) {
-            $options[][] = ['readConcern' => $value];
-        }
-
-        foreach ($this->getInvalidReadPreferenceValues() as $value) {
-            $options[][] = ['readPreference' => $value];
-        }
-
-        foreach ($this->getInvalidSessionValues() as $value) {
-            $options[][] = ['session' => $value];
-        }
-
-        foreach ($this->getInvalidIntegerValues() as $value) {
-            $options[][] = ['skip' => $value];
-        }
-
-        return $options;
-    }
-
-    private function getInvalidHintValues()
-    {
-        return [123, 3.14, true];
+        return self::createOptionDataProvider([
+            'collation' => self::getInvalidDocumentValues(),
+            'hint' => self::getInvalidHintValues(),
+            'limit' => self::getInvalidIntegerValues(),
+            'maxTimeMS' => self::getInvalidIntegerValues(),
+            'readConcern' => self::getInvalidReadConcernValues(),
+            'readPreference' => self::getInvalidReadPreferenceValues(),
+            'session' => self::getInvalidSessionValues(),
+            'skip' => self::getInvalidIntegerValues(),
+        ]);
     }
 }

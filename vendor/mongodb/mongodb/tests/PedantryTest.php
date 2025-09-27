@@ -2,19 +2,25 @@
 
 namespace MongoDB\Tests;
 
+use MongoDB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
 use ReflectionMethod;
 use RegexIterator;
+
 use function array_filter;
 use function array_map;
+use function in_array;
 use function realpath;
+use function str_contains;
 use function str_replace;
 use function strcasecmp;
 use function strlen;
 use function substr;
 use function usort;
+
 use const DIRECTORY_SEPARATOR;
 
 /**
@@ -22,52 +28,43 @@ use const DIRECTORY_SEPARATOR;
  */
 class PedantryTest extends TestCase
 {
-    /**
-     * @dataProvider provideProjectClassNames
-     */
-    public function testMethodsAreOrderedAlphabeticallyByVisibility($className)
+    private const SKIPPED_CLASSES = [
+        // Generated
+        MongoDB\Builder\Stage\FluentFactoryTrait::class,
+    ];
+
+    #[DataProvider('provideProjectClassNames')]
+    public function testMethodsAreOrderedAlphabeticallyByVisibility($className): void
     {
         $class = new ReflectionClass($className);
         $methods = $class->getMethods();
 
         $methods = array_filter(
             $methods,
-            function (ReflectionMethod $method) use ($class) {
-                return $method->getDeclaringClass() == $class;
-            }
+            fn (ReflectionMethod $method) => $method->getDeclaringClass() == $class // Exclude inherited methods
+                    && $method->getFileName() === $class->getFileName(), // Exclude methods inherited from traits
         );
 
         $getSortValue = function (ReflectionMethod $method) {
-            if ($method->getModifiers() & ReflectionMethod::IS_PRIVATE) {
-                return '2' . $method->getName();
-            }
-            if ($method->getModifiers() & ReflectionMethod::IS_PROTECTED) {
-                return '1' . $method->getName();
-            }
-            if ($method->getModifiers() & ReflectionMethod::IS_PUBLIC) {
-                return '0' . $method->getName();
-            }
+            $prefix = $method->isPrivate() ? '2' : ($method->isProtected() ? '1' : '0');
+            $prefix .= str_contains($method->getDocComment(), '@internal') ? '1' : '0';
+
+            return $prefix . $method->getName();
         };
 
         $sortedMethods = $methods;
         usort(
             $sortedMethods,
-            function (ReflectionMethod $a, ReflectionMethod $b) use ($getSortValue) {
-                return strcasecmp($getSortValue($a), $getSortValue($b));
-            }
+            fn (ReflectionMethod $a, ReflectionMethod $b) => strcasecmp($getSortValue($a), $getSortValue($b)),
         );
 
-        $methods = array_map(function (ReflectionMethod $method) {
-            return $method->getName();
-        }, $methods);
-        $sortedMethods = array_map(function (ReflectionMethod $method) {
-            return $method->getName();
-        }, $sortedMethods);
+        $methods = array_map(fn (ReflectionMethod $method) => $method->getName(), $methods);
+        $sortedMethods = array_map(fn (ReflectionMethod $method) => $method->getName(), $sortedMethods);
 
         $this->assertEquals($sortedMethods, $methods);
     }
 
-    public function provideProjectClassNames()
+    public static function provideProjectClassNames()
     {
         $classNames = [];
         $srcDir = realpath(__DIR__ . '/../src/');
@@ -84,7 +81,12 @@ class PedantryTest extends TestCase
                 continue;
             }
 
-            $classNames[][] = 'MongoDB\\' . str_replace(DIRECTORY_SEPARATOR, '\\', substr($file->getRealPath(), strlen($srcDir) + 1, -4));
+            $className = 'MongoDB\\' . str_replace(DIRECTORY_SEPARATOR, '\\', substr($file->getRealPath(), strlen($srcDir) + 1, -4));
+            if (in_array($className, self::SKIPPED_CLASSES)) {
+                continue;
+            }
+
+            $classNames[$className][] = $className;
         }
 
         return $classNames;

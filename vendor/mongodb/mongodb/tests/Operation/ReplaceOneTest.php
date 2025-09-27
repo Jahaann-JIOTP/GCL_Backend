@@ -2,64 +2,73 @@
 
 namespace MongoDB\Tests\Operation;
 
+use MongoDB\BSON\PackedArray;
 use MongoDB\Exception\InvalidArgumentException;
-use MongoDB\Model\BSONDocument;
+use MongoDB\Exception\UnsupportedValueException;
 use MongoDB\Operation\ReplaceOne;
+use MongoDB\Tests\Fixtures\Codec\TestDocumentCodec;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\DoesNotPerformAssertions;
+use TypeError;
 
 class ReplaceOneTest extends TestCase
 {
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testConstructorFilterArgumentTypeCheck($filter)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorFilterArgumentTypeCheck($filter): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException($filter instanceof PackedArray ? InvalidArgumentException::class : TypeError::class);
         new ReplaceOne($this->getDatabaseName(), $this->getCollectionName(), $filter, ['y' => 1]);
     }
 
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testConstructorReplacementArgumentTypeCheck($replacement)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorReplacementArgumentTypeCheck($replacement): void
+    {
+        $this->expectException($replacement instanceof PackedArray ? InvalidArgumentException::class : TypeError::class);
+        new ReplaceOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $replacement);
+    }
+
+    #[DataProvider('provideReplacementDocuments')]
+    #[DoesNotPerformAssertions]
+    public function testConstructorReplacementArgument($replacement): void
+    {
+        new ReplaceOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $replacement);
+    }
+
+    #[DataProvider('provideUpdateDocuments')]
+    public function testConstructorReplacementArgumentProhibitsUpdateDocument($replacement): void
     {
         $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('First key in $replacement is an update operator');
         new ReplaceOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $replacement);
     }
 
-    /**
-     * @dataProvider provideReplacementDocuments
-     * @doesNotPerformAssertions
-     */
-    public function testConstructorReplacementArgument($replacement)
-    {
-        new ReplaceOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $replacement);
-    }
-
-    /**
-     * @dataProvider provideUpdateDocuments
-     */
-    public function testConstructorReplacementArgumentRequiresNoOperators($replacement)
+    #[DataProvider('provideUpdatePipelines')]
+    #[DataProvider('provideEmptyUpdatePipelinesExcludingArray')]
+    public function testConstructorReplacementArgumentProhibitsUpdatePipeline($replacement): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('First key in $replacement argument is an update operator');
+        $this->expectExceptionMessageMatches('#(\$replacement is an update pipeline)|(Expected \$replacement to have type "document" \(array or object\))#');
         new ReplaceOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], $replacement);
     }
 
-    public function provideReplacementDocuments()
+    #[DataProvider('provideInvalidConstructorOptions')]
+    public function testConstructorOptionsTypeCheck($options): void
     {
-        return $this->wrapValuesForDataProvider([
-            ['y' => 1],
-            (object) ['y' => 1],
-            new BSONDocument(['y' => 1]),
+        $this->expectException(InvalidArgumentException::class);
+        new ReplaceOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], ['y' => 1], $options);
+    }
+
+    public static function provideInvalidConstructorOptions()
+    {
+        return self::createOptionDataProvider([
+            'codec' => self::getInvalidDocumentCodecValues(),
         ]);
     }
 
-    public function provideUpdateDocuments()
+    public function testCodecRejectsInvalidDocuments(): void
     {
-        return $this->wrapValuesForDataProvider([
-            ['$set' => ['y' => 1]],
-            (object) ['$set' => ['y' => 1]],
-            new BSONDocument(['$set' => ['y' => 1]]),
-        ]);
+        $this->expectExceptionObject(UnsupportedValueException::invalidEncodableValue([]));
+
+        new ReplaceOne($this->getDatabaseName(), $this->getCollectionName(), ['x' => 1], ['y' => 1], ['codec' => new TestDocumentCodec()]);
     }
 }

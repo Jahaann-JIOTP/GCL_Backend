@@ -4,13 +4,14 @@ namespace MongoDB\Tests\Operation;
 
 use MongoDB\Driver\BulkWrite;
 use MongoDB\Operation\FindOne;
+use MongoDB\Tests\Fixtures\Codec\TestDocumentCodec;
+use MongoDB\Tests\Fixtures\Document\TestObject;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class FindOneFunctionalTest extends FunctionalTestCase
 {
-    /**
-     * @dataProvider provideTypeMapOptionsAndExpectedDocument
-     */
-    public function testTypeMapOption(array $typeMap, $expectedDocument)
+    #[DataProvider('provideTypeMapOptionsAndExpectedDocument')]
+    public function testTypeMapOption(array $typeMap, $expectedDocument): void
     {
         $this->createFixtures(1);
 
@@ -20,7 +21,7 @@ class FindOneFunctionalTest extends FunctionalTestCase
         $this->assertEquals($expectedDocument, $document);
     }
 
-    public function provideTypeMapOptionsAndExpectedDocument()
+    public static function provideTypeMapOptionsAndExpectedDocument()
     {
         return [
             [
@@ -38,20 +39,27 @@ class FindOneFunctionalTest extends FunctionalTestCase
         ];
     }
 
+    public function testCodecOption(): void
+    {
+        $this->createFixtures(1);
+
+        $codec = new TestDocumentCodec();
+
+        $operation = new FindOne($this->getDatabaseName(), $this->getCollectionName(), [], ['codec' => $codec]);
+        $document = $operation->execute($this->getPrimaryServer());
+
+        $this->assertEquals(TestObject::createDecodedForFixture(1), $document);
+    }
+
     /**
      * Create data fixtures.
-     *
-     * @param integer $n
      */
-    private function createFixtures($n)
+    private function createFixtures(int $n): void
     {
         $bulkWrite = new BulkWrite(['ordered' => true]);
 
         for ($i = 1; $i <= $n; $i++) {
-            $bulkWrite->insert([
-                '_id' => $i,
-                'x' => (object) ['foo' => 'bar'],
-            ]);
+            $bulkWrite->insert(TestObject::createDocument($i));
         }
 
         $result = $this->manager->executeBulkWrite($this->getNamespace(), $bulkWrite);

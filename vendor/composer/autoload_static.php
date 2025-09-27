@@ -11,6 +11,10 @@ class ComposerStaticInit8279c5f86ab3778d470152c1f936bc93
     );
 
     public static $prefixLengthsPsr4 = array (
+        'P' => 
+        array (
+            'Psr\\Log\\' => 8,
+        ),
         'M' => 
         array (
             'MongoDB\\' => 8,
@@ -18,10 +22,18 @@ class ComposerStaticInit8279c5f86ab3778d470152c1f936bc93
     );
 
     public static $prefixDirsPsr4 = array (
+        'Psr\\Log\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/psr/log/src',
+        ),
         'MongoDB\\' => 
         array (
             0 => __DIR__ . '/..' . '/mongodb/mongodb/src',
         ),
+    );
+
+    public static $classMap = array (
+        'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
     );
 
     public static function getInitializer(ClassLoader $loader)
@@ -29,6 +41,7 @@ class ComposerStaticInit8279c5f86ab3778d470152c1f936bc93
         return \Closure::bind(function () use ($loader) {
             $loader->prefixLengthsPsr4 = ComposerStaticInit8279c5f86ab3778d470152c1f936bc93::$prefixLengthsPsr4;
             $loader->prefixDirsPsr4 = ComposerStaticInit8279c5f86ab3778d470152c1f936bc93::$prefixDirsPsr4;
+            $loader->classMap = ComposerStaticInit8279c5f86ab3778d470152c1f936bc93::$classMap;
 
         }, null, ClassLoader::class);
     }

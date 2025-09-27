@@ -2,27 +2,22 @@
 
 namespace MongoDB\Tests\Database;
 
-use InvalidArgumentException;
+use Iterator;
 use MongoDB\Driver\BulkWrite;
 use MongoDB\Model\CollectionInfo;
-use MongoDB\Model\CollectionInfoIterator;
-use function call_user_func;
-use function is_callable;
-use function sprintf;
 
 /**
  * Functional tests for collection management methods.
  */
 class CollectionManagementFunctionalTest extends FunctionalTestCase
 {
-    public function testCreateCollection()
+    public function testCreateCollection(): void
     {
         $that = $this;
         $basicCollectionName = $this->getCollectionName() . '.basic';
 
-        $commandResult = $this->database->createCollection($basicCollectionName);
-        $this->assertCommandSucceeded($commandResult);
-        $this->assertCollectionExists($basicCollectionName, function (CollectionInfo $info) use ($that) {
+        $this->database->createCollection($basicCollectionName);
+        $this->assertCollectionExists($basicCollectionName, null, function (CollectionInfo $info) use ($that): void {
             $that->assertFalse($info->isCapped());
         });
 
@@ -30,19 +25,18 @@ class CollectionManagementFunctionalTest extends FunctionalTestCase
         $cappedCollectionOptions = [
             'capped' => true,
             'max' => 100,
-            'size' => 1048576,
+            'size' => 1_048_576,
         ];
 
-        $commandResult = $this->database->createCollection($cappedCollectionName, $cappedCollectionOptions);
-        $this->assertCommandSucceeded($commandResult);
-        $this->assertCollectionExists($cappedCollectionName, function (CollectionInfo $info) use ($that) {
+        $this->database->createCollection($cappedCollectionName, $cappedCollectionOptions);
+        $this->assertCollectionExists($cappedCollectionName, null, function (CollectionInfo $info) use ($that): void {
             $that->assertTrue($info->isCapped());
             $that->assertEquals(100, $info->getCappedMax());
-            $that->assertEquals(1048576, $info->getCappedSize());
+            $that->assertEquals(1_048_576, $info->getCappedSize());
         });
     }
 
-    public function testDropCollection()
+    public function testDropCollection(): void
     {
         $bulkWrite = new BulkWrite();
         $bulkWrite->insert(['x' => 1]);
@@ -50,34 +44,31 @@ class CollectionManagementFunctionalTest extends FunctionalTestCase
         $writeResult = $this->manager->executeBulkWrite($this->getNamespace(), $bulkWrite);
         $this->assertEquals(1, $writeResult->getInsertedCount());
 
-        $commandResult = $this->database->dropCollection($this->getCollectionName());
-        $this->assertCommandSucceeded($commandResult);
+        $this->database->dropCollection($this->getCollectionName());
         $this->assertCollectionCount($this->getNamespace(), 0);
     }
 
-    public function testListCollections()
+    public function testListCollections(): void
     {
-        $commandResult = $this->database->createCollection($this->getCollectionName());
-        $this->assertCommandSucceeded($commandResult);
+        $this->database->createCollection($this->getCollectionName());
 
         $collections = $this->database->listCollections();
-        $this->assertInstanceOf(CollectionInfoIterator::class, $collections);
+        $this->assertInstanceOf(Iterator::class, $collections);
 
         foreach ($collections as $collection) {
             $this->assertInstanceOf(CollectionInfo::class, $collection);
         }
     }
 
-    public function testListCollectionsWithFilter()
+    public function testListCollectionsWithFilter(): void
     {
-        $commandResult = $this->database->createCollection($this->getCollectionName());
-        $this->assertCommandSucceeded($commandResult);
+        $this->database->createCollection($this->getCollectionName());
 
         $collectionName = $this->getCollectionName();
         $options = ['filter' => ['name' => $collectionName]];
 
         $collections = $this->database->listCollections($options);
-        $this->assertInstanceOf(CollectionInfoIterator::class, $collections);
+        $this->assertInstanceOf(Iterator::class, $collections);
 
         foreach ($collections as $collection) {
             $this->assertInstanceOf(CollectionInfo::class, $collection);
@@ -85,37 +76,28 @@ class CollectionManagementFunctionalTest extends FunctionalTestCase
         }
     }
 
-    /**
-     * Asserts that a collection with the given name exists in the database.
-     *
-     * An optional $callback may be provided, which should take a CollectionInfo
-     * argument as its first and only parameter. If a CollectionInfo matching
-     * the given name is found, it will be passed to the callback, which may
-     * perform additional assertions.
-     *
-     * @param callable $callback
-     */
-    private function assertCollectionExists($collectionName, $callback = null)
+    public function testListCollectionNames(): void
     {
-        if ($callback !== null && ! is_callable($callback)) {
-            throw new InvalidArgumentException('$callback is not a callable');
-        }
+        $this->database->createCollection($this->getCollectionName());
 
-        $collections = $this->database->listCollections();
-
-        $foundCollection = null;
+        $collections = $this->database->listCollectionNames();
 
         foreach ($collections as $collection) {
-            if ($collection->getName() === $collectionName) {
-                $foundCollection = $collection;
-                break;
-            }
+            $this->assertIsString($collection);
         }
+    }
 
-        $this->assertNotNull($foundCollection, sprintf('Found %s collection in the database', $collectionName));
+    public function testListCollectionNamesWithFilter(): void
+    {
+        $this->database->createCollection($this->getCollectionName());
 
-        if ($callback !== null) {
-            call_user_func($callback, $foundCollection);
+        $collectionName = $this->getCollectionName();
+        $options = ['filter' => ['name' => $collectionName]];
+
+        $collections = $this->database->listCollectionNames($options);
+
+        foreach ($collections as $collection) {
+            $this->assertEquals($collectionName, $collection);
         }
     }
 }

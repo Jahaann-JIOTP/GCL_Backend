@@ -2,38 +2,59 @@
 
 namespace MongoDB\Tests\Operation;
 
-use IteratorIterator;
 use MongoDB\Driver\BulkWrite;
 use MongoDB\Driver\ReadPreference;
-use MongoDB\Operation\CreateCollection;
 use MongoDB\Operation\CreateIndexes;
 use MongoDB\Operation\Find;
 use MongoDB\Tests\CommandObserver;
+use MongoDB\Tests\Fixtures\Codec\TestDocumentCodec;
+use MongoDB\Tests\Fixtures\Document\TestObject;
+use PHPUnit\Framework\Attributes\DataProvider;
+use stdClass;
+
 use function microtime;
-use function version_compare;
 
 class FindFunctionalTest extends FunctionalTestCase
 {
-    public function testDefaultReadConcernIsOmitted()
+    #[DataProvider('provideFilterDocuments')]
+    public function testFilterDocuments($filter, stdClass $expectedQuery): void
     {
         (new CommandObserver())->observe(
-            function () {
+            function () use ($filter): void {
                 $operation = new Find(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
-                    [],
-                    ['readConcern' => $this->createDefaultReadConcern()]
+                    $filter,
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectNotHasAttribute('readConcern', $event['started']->getCommand());
-            }
+            function (array $event) use ($expectedQuery): void {
+                $this->assertEquals($expectedQuery, $event['started']->getCommand()->filter ?? null);
+            },
         );
     }
 
-    public function testHintOption()
+    public function testDefaultReadConcernIsOmitted(): void
+    {
+        (new CommandObserver())->observe(
+            function (): void {
+                $operation = new Find(
+                    $this->getDatabaseName(),
+                    $this->getCollectionName(),
+                    [],
+                    ['readConcern' => $this->createDefaultReadConcern()],
+                );
+
+                $operation->execute($this->getPrimaryServer());
+            },
+            function (array $event): void {
+                $this->assertObjectNotHasProperty('readConcern', $event['started']->getCommand());
+            },
+        );
+    }
+
+    public function testHintOption(): void
     {
         $bulkWrite = new BulkWrite();
         $bulkWrite->insert(['_id' => 1, 'x' => 1]);
@@ -84,33 +105,27 @@ class FindFunctionalTest extends FunctionalTestCase
         }
     }
 
-    public function testSessionOption()
+    public function testSessionOption(): void
     {
-        if (version_compare($this->getServerVersion(), '3.6.0', '<')) {
-            $this->markTestSkipped('Sessions are not supported');
-        }
-
         (new CommandObserver())->observe(
-            function () {
+            function (): void {
                 $operation = new Find(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
                     [],
-                    ['session' => $this->createSession()]
+                    ['session' => $this->createSession()],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectHasAttribute('lsid', $event['started']->getCommand());
-            }
+            function (array $event): void {
+                $this->assertObjectHasProperty('lsid', $event['started']->getCommand());
+            },
         );
     }
 
-    /**
-     * @dataProvider provideTypeMapOptionsAndExpectedDocuments
-     */
-    public function testTypeMapOption(array $typeMap, array $expectedDocuments)
+    #[DataProvider('provideTypeMapOptionsAndExpectedDocuments')]
+    public function testTypeMapOption(array $typeMap, array $expectedDocuments): void
     {
         $this->createFixtures(3);
 
@@ -120,7 +135,7 @@ class FindFunctionalTest extends FunctionalTestCase
         $this->assertEquals($expectedDocuments, $cursor->toArray());
     }
 
-    public function provideTypeMapOptionsAndExpectedDocuments()
+    public static function provideTypeMapOptionsAndExpectedDocuments()
     {
         return [
             [
@@ -150,12 +165,27 @@ class FindFunctionalTest extends FunctionalTestCase
         ];
     }
 
-    public function testMaxAwaitTimeMS()
+    public function testCodecOption(): void
     {
-        if (version_compare($this->getServerVersion(), '3.2.0', '<')) {
-            $this->markTestSkipped('maxAwaitTimeMS option is not supported');
-        }
+        $this->createFixtures(3);
 
+        $codec = new TestDocumentCodec();
+
+        $operation = new Find($this->getDatabaseName(), $this->getCollectionName(), [], ['codec' => $codec]);
+        $cursor = $operation->execute($this->getPrimaryServer());
+
+        $this->assertEquals(
+            [
+                TestObject::createDecodedForFixture(1),
+                TestObject::createDecodedForFixture(2),
+                TestObject::createDecodedForFixture(3),
+            ],
+            $cursor->toArray(),
+        );
+    }
+
+    public function testMaxAwaitTimeMS(): void
+    {
         $maxAwaitTimeMS = 100;
 
         /* Calculate an approximate pivot to use for time assertions. We will
@@ -169,11 +199,10 @@ class FindFunctionalTest extends FunctionalTestCase
         $cappedCollectionOptions = [
             'capped' => true,
             'max' => 100,
-            'size' => 1048576,
+            'size' => 1_048_576,
         ];
 
-        $operation = new CreateCollection($databaseName, $cappedCollectionName, $cappedCollectionOptions);
-        $operation->execute($this->getPrimaryServer());
+        $this->createCollection($databaseName, $cappedCollectionName, $cappedCollectionOptions);
 
         // Insert documents into the capped collection.
         $bulkWrite = new BulkWrite(['ordered' => true]);
@@ -183,27 +212,26 @@ class FindFunctionalTest extends FunctionalTestCase
 
         $operation = new Find($databaseName, $cappedCollectionName, [], ['cursorType' => Find::TAILABLE_AWAIT, 'maxAwaitTimeMS' => $maxAwaitTimeMS]);
         $cursor = $operation->execute($this->getPrimaryServer());
-        $it = new IteratorIterator($cursor);
 
         /* The initial query includes the one and only document in its result
          * batch, so we should not expect a delay. */
         $startTime = microtime(true);
-        $it->rewind();
+        $cursor->rewind();
         $duration = microtime(true) - $startTime;
         $this->assertLessThan($pivot, $duration);
 
-        $this->assertTrue($it->valid());
-        $this->assertSameDocument(['_id' => 1], $it->current());
+        $this->assertTrue($cursor->valid());
+        $this->assertSameDocument(['_id' => 1], $cursor->current());
 
         /* Advancing again takes us to the last document of the result batch,
          * but still should not issue a getMore */
         $startTime = microtime(true);
-        $it->next();
+        $cursor->next();
         $duration = microtime(true) - $startTime;
         $this->assertLessThan($pivot, $duration);
 
-        $this->assertTrue($it->valid());
-        $this->assertSameDocument(['_id' => 2], $it->current());
+        $this->assertTrue($cursor->valid());
+        $this->assertSameDocument(['_id' => 2], $cursor->current());
 
         /* Now that we've reached the end of the initial result batch, advancing
          * again will issue a getMore. Expect to wait at least maxAwaitTimeMS,
@@ -211,20 +239,20 @@ class FindFunctionalTest extends FunctionalTestCase
          * query thread. Also ensure we don't wait too long (server default is
          * one second). */
         $startTime = microtime(true);
-        $it->next();
+        $cursor->next();
         $duration = microtime(true) - $startTime;
         $this->assertGreaterThan($pivot, $duration);
         $this->assertLessThan(0.5, $duration);
 
-        $this->assertFalse($it->valid());
+        $this->assertFalse($cursor->valid());
     }
 
-    public function testReadPreferenceWithinTransaction()
+    public function testReadPreferenceWithinTransaction(): void
     {
         $this->skipIfTransactionsAreNotSupported();
 
         // Collection must be created before the transaction starts
-        $this->createCollection();
+        $this->createCollection($this->getDatabaseName(), $this->getCollectionName());
 
         $session = $this->manager->startSession();
         $session->startTransaction();
@@ -234,7 +262,7 @@ class FindFunctionalTest extends FunctionalTestCase
 
             $filter = ['_id' => ['$lt' => 3]];
             $options = [
-                'readPreference' => new ReadPreference('primary'),
+                'readPreference' => new ReadPreference(ReadPreference::PRIMARY),
                 'session' => $session,
             ];
 
@@ -256,19 +284,13 @@ class FindFunctionalTest extends FunctionalTestCase
 
     /**
      * Create data fixtures.
-     *
-     * @param integer $n
-     * @param array   $executeBulkWriteOptions
      */
-    private function createFixtures($n, array $executeBulkWriteOptions = [])
+    private function createFixtures(int $n, array $executeBulkWriteOptions = []): void
     {
         $bulkWrite = new BulkWrite(['ordered' => true]);
 
         for ($i = 1; $i <= $n; $i++) {
-            $bulkWrite->insert([
-                '_id' => $i,
-                'x' => (object) ['foo' => 'bar'],
-            ]);
+            $bulkWrite->insert(TestObject::createDocument($i));
         }
 
         $result = $this->manager->executeBulkWrite($this->getNamespace(), $bulkWrite, $executeBulkWriteOptions);

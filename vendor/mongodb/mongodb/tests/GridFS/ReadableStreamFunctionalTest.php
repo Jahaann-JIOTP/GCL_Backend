@@ -8,7 +8,8 @@ use MongoDB\GridFS\CollectionWrapper;
 use MongoDB\GridFS\Exception\CorruptFileException;
 use MongoDB\GridFS\ReadableStream;
 use MongoDB\Tests\CommandObserver;
-use Symfony\Bridge\PhpUnit\SetUpTearDownTrait;
+use PHPUnit\Framework\Attributes\DataProvider;
+
 use function array_filter;
 
 /**
@@ -16,12 +17,9 @@ use function array_filter;
  */
 class ReadableStreamFunctionalTest extends FunctionalTestCase
 {
-    use SetUpTearDownTrait;
+    private CollectionWrapper $collectionWrapper;
 
-    /** @var CollectionWrapper */
-    private $collectionWrapper;
-
-    private function doSetUp()
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -36,41 +34,39 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         ]);
 
         $this->chunksCollection->insertMany([
-            ['_id' => 1, 'files_id' => 'length-0-with-empty-chunk', 'n' => 0, 'data' => new Binary('', Binary::TYPE_GENERIC)],
-            ['_id' => 2, 'files_id' => 'length-2', 'n' => 0, 'data' => new Binary('ab', Binary::TYPE_GENERIC)],
-            ['_id' => 3, 'files_id' => 'length-8', 'n' => 0, 'data' => new Binary('abcd', Binary::TYPE_GENERIC)],
-            ['_id' => 4, 'files_id' => 'length-8', 'n' => 1, 'data' => new Binary('efgh', Binary::TYPE_GENERIC)],
-            ['_id' => 5, 'files_id' => 'length-10', 'n' => 0, 'data' => new Binary('abcd', Binary::TYPE_GENERIC)],
-            ['_id' => 6, 'files_id' => 'length-10', 'n' => 1, 'data' => new Binary('efgh', Binary::TYPE_GENERIC)],
-            ['_id' => 7, 'files_id' => 'length-10', 'n' => 2, 'data' => new Binary('ij', Binary::TYPE_GENERIC)],
+            ['_id' => 1, 'files_id' => 'length-0-with-empty-chunk', 'n' => 0, 'data' => new Binary('')],
+            ['_id' => 2, 'files_id' => 'length-2', 'n' => 0, 'data' => new Binary('ab')],
+            ['_id' => 3, 'files_id' => 'length-8', 'n' => 0, 'data' => new Binary('abcd')],
+            ['_id' => 4, 'files_id' => 'length-8', 'n' => 1, 'data' => new Binary('efgh')],
+            ['_id' => 5, 'files_id' => 'length-10', 'n' => 0, 'data' => new Binary('abcd')],
+            ['_id' => 6, 'files_id' => 'length-10', 'n' => 1, 'data' => new Binary('efgh')],
+            ['_id' => 7, 'files_id' => 'length-10', 'n' => 2, 'data' => new Binary('ij')],
         ]);
     }
 
-    public function testGetFile()
+    public function testGetFile(): void
     {
         $fileDocument = (object) ['_id' => null, 'chunkSize' => 1, 'length' => 0];
         $stream = new ReadableStream($this->collectionWrapper, $fileDocument);
         $this->assertSame($fileDocument, $stream->getFile());
     }
 
-    /**
-     * @dataProvider provideInvalidConstructorFileDocuments
-     */
-    public function testConstructorFileDocumentChecks($file)
+    #[DataProvider('provideInvalidConstructorFileDocuments')]
+    public function testConstructorFileDocumentChecks($file): void
     {
         $this->expectException(CorruptFileException::class);
         new ReadableStream($this->collectionWrapper, $file);
     }
 
-    public function provideInvalidConstructorFileDocuments()
+    public static function provideInvalidConstructorFileDocuments()
     {
         $options = [];
 
-        foreach ($this->getInvalidIntegerValues() as $value) {
+        foreach (self::getInvalidIntegerValues() as $value) {
             $options[][] = (object) ['_id' => 1, 'chunkSize' => $value, 'length' => 0];
         }
 
-        foreach ($this->getInvalidIntegerValues() as $value) {
+        foreach (self::getInvalidIntegerValues() as $value) {
             $options[][] = (object) ['_id' => 1, 'chunkSize' => 1, 'length' => $value];
         }
 
@@ -81,10 +77,8 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         return $options;
     }
 
-    /**
-     * @dataProvider provideFileIdAndExpectedBytes
-     */
-    public function testReadBytes($fileId, $length, $expectedBytes)
+    #[DataProvider('provideFileIdAndExpectedBytes')]
+    public function testReadBytes($fileId, $length, $expectedBytes): void
     {
         $fileDocument = $this->collectionWrapper->findFileById($fileId);
         $stream = new ReadableStream($this->collectionWrapper, $fileDocument);
@@ -92,7 +86,7 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $this->assertSame($expectedBytes, $stream->readBytes($length));
     }
 
-    public function provideFileIdAndExpectedBytes()
+    public static function provideFileIdAndExpectedBytes()
     {
         return [
             ['length-0', 0, ''],
@@ -118,30 +112,26 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         ];
     }
 
-    public function provideFilteredFileIdAndExpectedBytes()
+    public static function provideFilteredFileIdAndExpectedBytes()
     {
         return array_filter(
-            $this->provideFileIdAndExpectedBytes(),
-            function (array $args) {
-                return $args[1] > 0;
-            }
+            self::provideFileIdAndExpectedBytes(),
+            fn (array $args) => $args[1] > 0,
         );
     }
 
-    /**
-     * @dataProvider provideFilteredFileIdAndExpectedBytes
-     */
-    public function testReadBytesCalledMultipleTimes($fileId, $length, $expectedBytes)
+    #[DataProvider('provideFilteredFileIdAndExpectedBytes')]
+    public function testReadBytesCalledMultipleTimes($fileId, $length, $expectedBytes): void
     {
         $fileDocument = $this->collectionWrapper->findFileById($fileId);
         $stream = new ReadableStream($this->collectionWrapper, $fileDocument);
         for ($i = 0; $i < $length; $i++) {
-            $expectedByte = isset($expectedBytes[$i]) ? $expectedBytes[$i] : '';
+            $expectedByte = $expectedBytes[$i] ?? '';
             $this->assertSame($expectedByte, $stream->readBytes(1));
         }
     }
 
-    public function testReadBytesWithMissingChunk()
+    public function testReadBytesWithMissingChunk(): void
     {
         $this->chunksCollection->deleteOne(['files_id' => 'length-10', 'n' => 2]);
 
@@ -153,7 +143,7 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $stream->readBytes(10);
     }
 
-    public function testReadBytesWithUnexpectedChunkIndex()
+    public function testReadBytesWithUnexpectedChunkIndex(): void
     {
         $this->chunksCollection->deleteOne(['files_id' => 'length-10', 'n' => 1]);
 
@@ -165,11 +155,11 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $stream->readBytes(10);
     }
 
-    public function testReadBytesWithUnexpectedChunkSize()
+    public function testReadBytesWithUnexpectedChunkSize(): void
     {
         $this->chunksCollection->updateOne(
             ['files_id' => 'length-10', 'n' => 2],
-            ['$set' => ['data' => new Binary('i', Binary::TYPE_GENERIC)]]
+            ['$set' => ['data' => new Binary('i')]],
         );
 
         $fileDocument = $this->collectionWrapper->findFileById('length-10');
@@ -180,7 +170,7 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $stream->readBytes(10);
     }
 
-    public function testReadBytesWithNegativeLength()
+    public function testReadBytesWithNegativeLength(): void
     {
         $fileDocument = $this->collectionWrapper->findFileById('length-0');
         $stream = new ReadableStream($this->collectionWrapper, $fileDocument);
@@ -189,7 +179,7 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $stream->readBytes(-1);
     }
 
-    public function testSeekBeforeReading()
+    public function testSeekBeforeReading(): void
     {
         $fileDocument = $this->collectionWrapper->findFileById('length-10');
         $stream = new ReadableStream($this->collectionWrapper, $fileDocument);
@@ -198,7 +188,7 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $this->assertSame('ij', $stream->readBytes(2));
     }
 
-    public function testSeekOutOfRange()
+    public function testSeekOutOfRange(): void
     {
         $fileDocument = $this->collectionWrapper->findFileById('length-10');
         $stream = new ReadableStream($this->collectionWrapper, $fileDocument);
@@ -208,10 +198,8 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $stream->seek(11);
     }
 
-    /**
-     * @dataProvider providePreviousChunkSeekOffsetAndBytes
-     */
-    public function testSeekPreviousChunk($offset, $length, $expectedBytes)
+    #[DataProvider('providePreviousChunkSeekOffsetAndBytes')]
+    public function testSeekPreviousChunk($offset, $length, $expectedBytes): void
     {
         $fileDocument = $this->collectionWrapper->findFileById('length-10');
         $stream = new ReadableStream($this->collectionWrapper, $fileDocument);
@@ -222,19 +210,19 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $commands = [];
 
         (new CommandObserver())->observe(
-            function () use ($stream, $offset, $length, $expectedBytes) {
+            function () use ($stream, $offset, $length, $expectedBytes): void {
                 $stream->seek($offset);
                 $this->assertSame($expectedBytes, $stream->readBytes($length));
             },
-            function (array $event) use (&$commands) {
+            function (array $event) use (&$commands): void {
                 $commands[] = $event['started']->getCommandName();
-            }
+            },
         );
 
         $this->assertSame(['find'], $commands);
     }
 
-    public function providePreviousChunkSeekOffsetAndBytes()
+    public static function providePreviousChunkSeekOffsetAndBytes()
     {
         return [
             [0, 4, 'abcd'],
@@ -244,10 +232,8 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         ];
     }
 
-    /**
-     * @dataProvider provideSameChunkSeekOffsetAndBytes
-     */
-    public function testSeekSameChunk($offset, $length, $expectedBytes)
+    #[DataProvider('provideSameChunkSeekOffsetAndBytes')]
+    public function testSeekSameChunk($offset, $length, $expectedBytes): void
     {
         $fileDocument = $this->collectionWrapper->findFileById('length-10');
         $stream = new ReadableStream($this->collectionWrapper, $fileDocument);
@@ -258,19 +244,19 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $commands = [];
 
         (new CommandObserver())->observe(
-            function () use ($stream, $offset, $length, $expectedBytes) {
+            function () use ($stream, $offset, $length, $expectedBytes): void {
                 $stream->seek($offset);
                 $this->assertSame($expectedBytes, $stream->readBytes($length));
             },
-            function (array $event) use (&$commands) {
+            function (array $event) use (&$commands): void {
                 $commands[] = $event['started']->getCommandName();
-            }
+            },
         );
 
         $this->assertSame([], $commands);
     }
 
-    public function provideSameChunkSeekOffsetAndBytes()
+    public static function provideSameChunkSeekOffsetAndBytes()
     {
         return [
             [4, 4, 'efgh'],
@@ -278,10 +264,8 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         ];
     }
 
-    /**
-     * @dataProvider provideSubsequentChunkSeekOffsetAndBytes
-     */
-    public function testSeekSubsequentChunk($offset, $length, $expectedBytes)
+    #[DataProvider('provideSubsequentChunkSeekOffsetAndBytes')]
+    public function testSeekSubsequentChunk($offset, $length, $expectedBytes): void
     {
         $fileDocument = $this->collectionWrapper->findFileById('length-10');
         $stream = new ReadableStream($this->collectionWrapper, $fileDocument);
@@ -292,19 +276,19 @@ class ReadableStreamFunctionalTest extends FunctionalTestCase
         $commands = [];
 
         (new CommandObserver())->observe(
-            function () use ($stream, $offset, $length, $expectedBytes) {
+            function () use ($stream, $offset, $length, $expectedBytes): void {
                 $stream->seek($offset);
                 $this->assertSame($expectedBytes, $stream->readBytes($length));
             },
-            function (array $event) use (&$commands) {
+            function (array $event) use (&$commands): void {
                 $commands[] = $event['started']->getCommandName();
-            }
+            },
         );
 
         $this->assertSame([], $commands);
     }
 
-    public function provideSubsequentChunkSeekOffsetAndBytes()
+    public static function provideSubsequentChunkSeekOffsetAndBytes()
     {
         return [
             [4, 4, 'efgh'],

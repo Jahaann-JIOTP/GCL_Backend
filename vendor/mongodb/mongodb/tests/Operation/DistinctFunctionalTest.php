@@ -3,63 +3,125 @@
 namespace MongoDB\Tests\Operation;
 
 use MongoDB\Driver\BulkWrite;
+use MongoDB\Operation\CreateIndexes;
 use MongoDB\Operation\Distinct;
+use MongoDB\Operation\InsertMany;
 use MongoDB\Tests\CommandObserver;
+use PHPUnit\Framework\Attributes\DataProvider;
+use stdClass;
+
 use function is_scalar;
 use function json_encode;
+use function sort;
 use function usort;
-use function version_compare;
+
+use const JSON_THROW_ON_ERROR;
 
 class DistinctFunctionalTest extends FunctionalTestCase
 {
-    public function testDefaultReadConcernIsOmitted()
+    #[DataProvider('provideFilterDocuments')]
+    public function testFilterDocuments($filter, stdClass $expectedQuery): void
     {
         (new CommandObserver())->observe(
-            function () {
+            function () use ($filter): void {
+                $operation = new Distinct(
+                    $this->getDatabaseName(),
+                    $this->getCollectionName(),
+                    'x',
+                    $filter,
+                );
+
+                $operation->execute($this->getPrimaryServer());
+            },
+            function (array $event) use ($expectedQuery): void {
+                $this->assertEquals($expectedQuery, $event['started']->getCommand()->query ?? null);
+            },
+        );
+    }
+
+    public function testDefaultReadConcernIsOmitted(): void
+    {
+        (new CommandObserver())->observe(
+            function (): void {
                 $operation = new Distinct(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
                     'x',
                     [],
-                    ['readConcern' => $this->createDefaultReadConcern()]
+                    ['readConcern' => $this->createDefaultReadConcern()],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectNotHasAttribute('readConcern', $event['started']->getCommand());
-            }
+            function (array $event): void {
+                $this->assertObjectNotHasProperty('readConcern', $event['started']->getCommand());
+            },
         );
     }
 
-    public function testSessionOption()
+    public function testHintOption(): void
     {
-        if (version_compare($this->getServerVersion(), '3.6.0', '<')) {
-            $this->markTestSkipped('Sessions are not supported');
+        $this->skipIfServerVersion('<', '7.1.0', 'hint is not supported');
+
+        $insertMany = new InsertMany($this->getDatabaseName(), $this->getCollectionName(), [
+            ['x' => 1],
+            ['x' => 2, 'y' => 2],
+            ['y' => 3],
+        ]);
+        $insertMany->execute($this->getPrimaryServer());
+
+        $createIndexes = new CreateIndexes($this->getDatabaseName(), $this->getCollectionName(), [
+            ['key' => ['x' => 1], 'sparse' => true, 'name' => 'sparse_x'],
+            ['key' => ['y' => 1]],
+        ]);
+        $createIndexes->execute($this->getPrimaryServer());
+
+        $hintsUsingSparseIndex = [
+            ['x' => 1],
+            'sparse_x',
+        ];
+
+        foreach ($hintsUsingSparseIndex as $hint) {
+            $operation = new Distinct($this->getDatabaseName(), $this->getCollectionName(), 'y', [], ['hint' => $hint]);
+            $this->assertSame([2], $operation->execute($this->getPrimaryServer()));
         }
 
+        $hintsNotUsingSparseIndex = [
+            ['_id' => 1],
+            ['y' => 1],
+            'y_1',
+        ];
+
+        foreach ($hintsNotUsingSparseIndex as $hint) {
+            $operation = new Distinct($this->getDatabaseName(), $this->getCollectionName(), 'x', [], ['hint' => $hint]);
+            $values = $operation->execute($this->getPrimaryServer());
+            sort($values);
+            $this->assertSame([1, 2], $values);
+        }
+    }
+
+    public function testSessionOption(): void
+    {
         (new CommandObserver())->observe(
-            function () {
+            function (): void {
                 $operation = new Distinct(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
                     'x',
                     [],
-                    ['session' => $this->createSession()]
+                    ['session' => $this->createSession()],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectHasAttribute('lsid', $event['started']->getCommand());
-            }
+            function (array $event): void {
+                $this->assertObjectHasProperty('lsid', $event['started']->getCommand());
+            },
         );
     }
 
-    /**
-     * @dataProvider provideTypeMapOptionsAndExpectedDocuments
-     */
-    public function testTypeMapOption(array $typeMap, array $expectedDocuments)
+    #[DataProvider('provideTypeMapOptionsAndExpectedDocuments')]
+    public function testTypeMapOption(array $typeMap, array $expectedDocuments): void
     {
         $bulkWrite = new BulkWrite(['ordered' => true]);
         $bulkWrite->insert([
@@ -88,8 +150,8 @@ class DistinctFunctionalTest extends FunctionalTestCase
                     return 1;
                 }
 
-                $a = json_encode($a);
-                $b = json_encode($b);
+                $a = json_encode($a, JSON_THROW_ON_ERROR);
+                $b = json_encode($b, JSON_THROW_ON_ERROR);
             }
 
             return $a < $b ? -1 : 1;
@@ -101,7 +163,7 @@ class DistinctFunctionalTest extends FunctionalTestCase
         $this->assertEquals($expectedDocuments, $values);
     }
 
-    public function provideTypeMapOptionsAndExpectedDocuments()
+    public static function provideTypeMapOptionsAndExpectedDocuments()
     {
         return [
             'No type map' => [

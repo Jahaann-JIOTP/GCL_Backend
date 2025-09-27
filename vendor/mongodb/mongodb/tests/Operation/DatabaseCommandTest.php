@@ -2,45 +2,34 @@
 
 namespace MongoDB\Tests\Operation;
 
+use MongoDB\BSON\PackedArray;
 use MongoDB\Exception\InvalidArgumentException;
 use MongoDB\Operation\DatabaseCommand;
+use PHPUnit\Framework\Attributes\DataProvider;
+use TypeError;
 
 class DatabaseCommandTest extends TestCase
 {
-    /**
-     * @dataProvider provideInvalidDocumentValues
-     */
-    public function testConstructorCommandArgumentTypeCheck($command)
+    #[DataProvider('provideInvalidDocumentValues')]
+    public function testConstructorCommandArgumentTypeCheck($command): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException($command instanceof PackedArray ? InvalidArgumentException::class : TypeError::class);
         new DatabaseCommand($this->getDatabaseName(), $command);
     }
 
-    /**
-     * @dataProvider provideInvalidConstructorOptions
-     */
-    public function testConstructorOptionTypeChecks(array $options)
+    #[DataProvider('provideInvalidConstructorOptions')]
+    public function testConstructorOptionTypeChecks(array $options): void
     {
         $this->expectException(InvalidArgumentException::class);
         new DatabaseCommand($this->getDatabaseName(), ['ping' => 1], $options);
     }
 
-    public function provideInvalidConstructorOptions()
+    public static function provideInvalidConstructorOptions()
     {
-        $options = [];
-
-        foreach ($this->getInvalidReadPreferenceValues() as $value) {
-            $options[][] = ['readPreference' => $value];
-        }
-
-        foreach ($this->getInvalidSessionValues() as $value) {
-            $options[][] = ['session' => $value];
-        }
-
-        foreach ($this->getInvalidArrayValues() as $value) {
-            $options[][] = ['typeMap' => $value];
-        }
-
-        return $options;
+        return self::createOptionDataProvider([
+            'readPreference' => self::getInvalidReadPreferenceValues(),
+            'session' => self::getInvalidSessionValues(),
+            'typeMap' => self::getInvalidArrayValues(),
+        ]);
     }
 }

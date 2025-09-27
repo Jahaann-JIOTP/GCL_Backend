@@ -5,28 +5,47 @@ namespace MongoDB\Tests\Operation;
 use MongoDB\Collection;
 use MongoDB\DeleteResult;
 use MongoDB\Driver\BulkWrite;
+use MongoDB\Driver\Exception\LogicException;
 use MongoDB\Driver\WriteConcern;
-use MongoDB\Exception\BadMethodCallException;
+use MongoDB\Exception\UnsupportedException;
 use MongoDB\Operation\Delete;
 use MongoDB\Tests\CommandObserver;
-use Symfony\Bridge\PhpUnit\SetUpTearDownTrait;
-use function version_compare;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Depends;
+use stdClass;
 
 class DeleteFunctionalTest extends FunctionalTestCase
 {
-    use SetUpTearDownTrait;
+    private Collection $collection;
 
-    /** @var Collection */
-    private $collection;
-
-    private function doSetUp()
+    public function setUp(): void
     {
         parent::setUp();
 
         $this->collection = new Collection($this->manager, $this->getDatabaseName(), $this->getCollectionName());
     }
 
-    public function testDeleteOne()
+    #[DataProvider('provideFilterDocuments')]
+    public function testFilterDocuments($filter, stdClass $expectedQuery): void
+    {
+        (new CommandObserver())->observe(
+            function () use ($filter): void {
+                $operation = new Delete(
+                    $this->getDatabaseName(),
+                    $this->getCollectionName(),
+                    $filter,
+                    1,
+                );
+
+                $operation->execute($this->getPrimaryServer());
+            },
+            function (array $event) use ($expectedQuery): void {
+                $this->assertEquals($expectedQuery, $event['started']->getCommand()->deletes[0]->q ?? null);
+            },
+        );
+    }
+
+    public function testDeleteOne(): void
     {
         $this->createFixtures(3);
 
@@ -46,7 +65,7 @@ class DeleteFunctionalTest extends FunctionalTestCase
         $this->assertSameDocuments($expected, $this->collection->find());
     }
 
-    public function testDeleteMany()
+    public function testDeleteMany(): void
     {
         $this->createFixtures(3);
 
@@ -65,27 +84,41 @@ class DeleteFunctionalTest extends FunctionalTestCase
         $this->assertSameDocuments($expected, $this->collection->find());
     }
 
-    public function testSessionOption()
+    public function testHintOptionAndUnacknowledgedWriteConcernUnsupportedClientSideError(): void
     {
-        if (version_compare($this->getServerVersion(), '3.6.0', '<')) {
-            $this->markTestSkipped('Sessions are not supported');
-        }
+        $this->skipIfServerVersion('>=', '4.4.0', 'hint is supported');
 
+        $operation = new Delete(
+            $this->getDatabaseName(),
+            $this->getCollectionName(),
+            [],
+            0,
+            ['hint' => '_id_', 'writeConcern' => new WriteConcern(0)],
+        );
+
+        $this->expectException(UnsupportedException::class);
+        $this->expectExceptionMessage('Hint is not supported by the server executing this operation');
+
+        $operation->execute($this->getPrimaryServer());
+    }
+
+    public function testSessionOption(): void
+    {
         (new CommandObserver())->observe(
-            function () {
+            function (): void {
                 $operation = new Delete(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
                     [],
                     0,
-                    ['session' => $this->createSession()]
+                    ['session' => $this->createSession()],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectHasAttribute('lsid', $event['started']->getCommand());
-            }
+            function (array $event): void {
+                $this->assertObjectHasProperty('lsid', $event['started']->getCommand());
+            },
         );
     }
 
@@ -102,22 +135,18 @@ class DeleteFunctionalTest extends FunctionalTestCase
         return $result;
     }
 
-    /**
-     * @depends testUnacknowledgedWriteConcern
-     */
-    public function testUnacknowledgedWriteConcernAccessesDeletedCount(DeleteResult $result)
+    #[Depends('testUnacknowledgedWriteConcern')]
+    public function testUnacknowledgedWriteConcernAccessesDeletedCount(DeleteResult $result): void
     {
-        $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessageRegExp('/[\w:\\\\]+ should not be called for an unacknowledged write result/');
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessageMatches('/[\w:\\\\\(\)]+ should not be called for an unacknowledged write result/');
         $result->getDeletedCount();
     }
 
     /**
      * Create data fixtures.
-     *
-     * @param integer $n
      */
-    private function createFixtures($n)
+    private function createFixtures(int $n): void
     {
         $bulkWrite = new BulkWrite(['ordered' => true]);
 

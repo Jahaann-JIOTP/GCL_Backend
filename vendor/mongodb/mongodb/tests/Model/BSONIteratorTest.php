@@ -2,22 +2,31 @@
 
 namespace MongoDB\Tests\Model;
 
+use Generator;
+use MongoDB\BSON\Document;
 use MongoDB\Exception\UnexpectedValueException;
 use MongoDB\Model\BSONIterator;
 use MongoDB\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+
 use function array_map;
 use function implode;
 use function iterator_to_array;
-use function MongoDB\BSON\fromPHP;
 use function substr;
 
 class BSONIteratorTest extends TestCase
 {
-    /**
-     * @dataProvider provideTypeMapOptionsAndExpectedDocuments
-     */
-    public function testValidValues(array $typeMap = null, $binaryString, array $expectedDocuments)
+    #[DataProvider('provideTypeMapOptionsAndExpectedDocuments')]
+    public function testValidValues(?array $typeMap, array $expectedDocuments): void
     {
+        $binaryString = implode(array_map(
+            fn ($input) => (string) Document::fromPHP($input),
+            [
+                ['_id' => 1, 'x' => ['foo' => 'bar']],
+                ['_id' => 3, 'x' => ['foo' => 'bar']],
+            ],
+        ));
+
         $bsonIt = new BSONIterator($binaryString, ['typeMap' => $typeMap]);
 
         $results = iterator_to_array($bsonIt);
@@ -25,71 +34,44 @@ class BSONIteratorTest extends TestCase
         $this->assertEquals($expectedDocuments, $results);
     }
 
-    public function provideTypeMapOptionsAndExpectedDocuments()
+    public static function provideTypeMapOptionsAndExpectedDocuments(): Generator
     {
-        return [
-            [
-                null,
-                implode(array_map(
-                    'MongoDB\BSON\fromPHP',
-                    [
-                        ['_id' => 1, 'x' => ['foo' => 'bar']],
-                        ['_id' => 3, 'x' => ['foo' => 'bar']],
-                    ]
-                )),
-                [
-                    (object) ['_id' => 1, 'x' => (object) ['foo' => 'bar']],
-                    (object) ['_id' => 3, 'x' => (object) ['foo' => 'bar']],
-                ],
+        yield 'No type map' => [
+            'typeMap' => null,
+            'expectedDocuments' => [
+                (object) ['_id' => 1, 'x' => (object) ['foo' => 'bar']],
+                (object) ['_id' => 3, 'x' => (object) ['foo' => 'bar']],
             ],
-            [
-                ['root' => 'array', 'document' => 'array'],
-                implode(array_map(
-                    'MongoDB\BSON\fromPHP',
-                    [
-                        ['_id' => 1, 'x' => ['foo' => 'bar']],
-                        ['_id' => 3, 'x' => ['foo' => 'bar']],
-                    ]
-                )),
-                [
-                    ['_id' => 1, 'x' => ['foo' => 'bar']],
-                    ['_id' => 3, 'x' => ['foo' => 'bar']],
-                ],
+        ];
+
+        yield 'Array type map' => [
+            'typeMap' => ['root' => 'array', 'document' => 'array'],
+            'expectedDocuments' => [
+                ['_id' => 1, 'x' => ['foo' => 'bar']],
+                ['_id' => 3, 'x' => ['foo' => 'bar']],
             ],
-            [
-                ['root' => 'object', 'document' => 'array'],
-                implode(array_map(
-                    'MongoDB\BSON\fromPHP',
-                    [
-                        ['_id' => 1, 'x' => ['foo' => 'bar']],
-                        ['_id' => 3, 'x' => ['foo' => 'bar']],
-                    ]
-                )),
-                [
-                    (object) ['_id' => 1, 'x' => ['foo' => 'bar']],
-                    (object) ['_id' => 3, 'x' => ['foo' => 'bar']],
-                ],
+        ];
+
+        yield 'Root as object' => [
+            'typeMap' => ['root' => 'object', 'document' => 'array'],
+            'expectedDocuments' => [
+                (object) ['_id' => 1, 'x' => ['foo' => 'bar']],
+                (object) ['_id' => 3, 'x' => ['foo' => 'bar']],
             ],
-            [
-                ['root' => 'array', 'document' => 'stdClass'],
-                implode(array_map(
-                    'MongoDB\BSON\fromPHP',
-                    [
-                        ['_id' => 1, 'x' => ['foo' => 'bar']],
-                        ['_id' => 3, 'x' => ['foo' => 'bar']],
-                    ]
-                )),
-                [
-                    ['_id' => 1, 'x' => (object) ['foo' => 'bar']],
-                    ['_id' => 3, 'x' => (object) ['foo' => 'bar']],
-                ],
+        ];
+
+        yield 'Document as object' => [
+            'typeMap' => ['root' => 'array', 'document' => 'stdClass'],
+            'expectedDocuments' => [
+                ['_id' => 1, 'x' => (object) ['foo' => 'bar']],
+                ['_id' => 3, 'x' => (object) ['foo' => 'bar']],
             ],
         ];
     }
 
-    public function testCannotReadLengthFromFirstDocument()
+    public function testCannotReadLengthFromFirstDocument(): void
     {
-        $binaryString = substr(fromPHP([]), 0, 3);
+        $binaryString = substr((string) Document::fromPHP([]), 0, 3);
 
         $bsonIt = new BSONIterator($binaryString);
 
@@ -98,9 +80,9 @@ class BSONIteratorTest extends TestCase
         $bsonIt->rewind();
     }
 
-    public function testCannotReadLengthFromSubsequentDocument()
+    public function testCannotReadLengthFromSubsequentDocument(): void
     {
-        $binaryString = fromPHP([]) . substr(fromPHP([]), 0, 3);
+        $binaryString = (string) Document::fromPHP([]) . substr((string) Document::fromPHP([]), 0, 3);
 
         $bsonIt = new BSONIterator($binaryString);
         $bsonIt->rewind();
@@ -110,9 +92,9 @@ class BSONIteratorTest extends TestCase
         $bsonIt->next();
     }
 
-    public function testCannotReadFirstDocument()
+    public function testCannotReadFirstDocument(): void
     {
-        $binaryString = substr(fromPHP([]), 0, 4);
+        $binaryString = substr((string) Document::fromPHP([]), 0, 4);
 
         $bsonIt = new BSONIterator($binaryString);
 
@@ -121,9 +103,9 @@ class BSONIteratorTest extends TestCase
         $bsonIt->rewind();
     }
 
-    public function testCannotReadSecondDocument()
+    public function testCannotReadSecondDocument(): void
     {
-        $binaryString = fromPHP([]) . substr(fromPHP([]), 0, 4);
+        $binaryString = (string) Document::fromPHP([]) . substr((string) Document::fromPHP([]), 0, 4);
 
         $bsonIt = new BSONIterator($binaryString);
         $bsonIt->rewind();

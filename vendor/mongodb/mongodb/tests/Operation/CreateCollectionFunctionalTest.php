@@ -4,47 +4,42 @@ namespace MongoDB\Tests\Operation;
 
 use MongoDB\Operation\CreateCollection;
 use MongoDB\Tests\CommandObserver;
-use function version_compare;
 
 class CreateCollectionFunctionalTest extends FunctionalTestCase
 {
-    public function testDefaultWriteConcernIsOmitted()
+    public function testDefaultWriteConcernIsOmitted(): void
     {
         (new CommandObserver())->observe(
-            function () {
+            function (): void {
                 $operation = new CreateCollection(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
-                    ['writeConcern' => $this->createDefaultWriteConcern()]
+                    ['writeConcern' => $this->createDefaultWriteConcern()],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectNotHasAttribute('writeConcern', $event['started']->getCommand());
-            }
+            function (array $event): void {
+                $this->assertObjectNotHasProperty('writeConcern', $event['started']->getCommand());
+            },
         );
     }
 
-    public function testSessionOption()
+    public function testSessionOption(): void
     {
-        if (version_compare($this->getServerVersion(), '3.6.0', '<')) {
-            $this->markTestSkipped('Sessions are not supported');
-        }
-
         (new CommandObserver())->observe(
-            function () {
+            function (): void {
                 $operation = new CreateCollection(
                     $this->getDatabaseName(),
                     $this->getCollectionName(),
-                    ['session' => $this->createSession()]
+                    ['session' => $this->createSession()],
                 );
 
                 $operation->execute($this->getPrimaryServer());
             },
-            function (array $event) {
-                $this->assertObjectHasAttribute('lsid', $event['started']->getCommand());
-            }
+            function (array $event): void {
+                $this->assertObjectHasProperty('lsid', $event['started']->getCommand());
+            },
         );
     }
 }

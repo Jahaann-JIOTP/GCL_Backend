@@ -3,43 +3,87 @@
 namespace MongoDB\Tests;
 
 use InvalidArgumentException;
+use MongoDB\BSON\Document;
+use MongoDB\BSON\PackedArray;
+use MongoDB\Codec\Codec;
 use MongoDB\Driver\ReadConcern;
 use MongoDB\Driver\ReadPreference;
 use MongoDB\Driver\WriteConcern;
 use MongoDB\Model\BSONArray;
 use MongoDB\Model\BSONDocument;
-use MongoDB\Tests\Compat\PolyfillAssertTrait;
+use MongoDB\Tests\SpecTests\DocumentsMatchConstraint;
 use PHPUnit\Framework\TestCase as BaseTestCase;
 use ReflectionClass;
 use stdClass;
 use Traversable;
+
 use function array_map;
 use function array_values;
 use function call_user_func;
+use function get_debug_type;
 use function getenv;
 use function hash;
 use function is_array;
+use function is_int;
 use function is_object;
+use function is_string;
 use function iterator_to_array;
-use function MongoDB\BSON\fromPHP;
-use function MongoDB\BSON\toJSON;
+use function preg_match;
+use function preg_replace;
 use function restore_error_handler;
 use function set_error_handler;
 use function sprintf;
+use function strtr;
+
+use const E_DEPRECATED;
 use const E_USER_DEPRECATED;
 
 abstract class TestCase extends BaseTestCase
 {
-    use PolyfillAssertTrait;
-
     /**
      * Return the connection URI.
-     *
-     * @return string
      */
-    public static function getUri()
+    public static function getUri(): string
     {
         return getenv('MONGODB_URI') ?: 'mongodb://127.0.0.1:27017';
+    }
+
+    public static function printConfiguration(): void
+    {
+        $template = <<<'OUTPUT'
+Test configuration:
+  URI: %uri%
+  Database: %database%
+  API version: %apiVersion%
+  
+  crypt_shared: %cryptSharedAvailable% 
+  mongocryptd: %mongocryptdAvailable%
+
+OUTPUT;
+
+        // Redact credentials in the URI to be safe
+        $uri = static::getUri();
+        if (preg_match('#://.+:.+@#', $uri)) {
+            $uri = preg_replace('#(.+://).+:.+@(.+)$#', '$1<redacted>@$2', $uri);
+        }
+
+        $configuration = [
+            '%uri%' => $uri,
+            '%database%' => static::getDatabaseName(),
+            '%apiVersion%' => getenv('API_VERSION') ?: 'Not configured',
+            '%cryptSharedAvailable%' => FunctionalTestCase::isCryptSharedLibAvailable() ? 'Available' : 'Not available',
+            '%mongocryptdAvailable%' => FunctionalTestCase::isMongocryptdAvailable() ? 'Available' : 'Not available',
+        ];
+
+        echo strtr($template, $configuration) . "\n";
+    }
+
+    /**
+     * Return the test database name.
+     */
+    protected static function getDatabaseName(): string
+    {
+        return getenv('MONGODB_DATABASE') ?: 'phplib_test';
     }
 
     /**
@@ -47,33 +91,10 @@ abstract class TestCase extends BaseTestCase
      *
      * Only fields in the expected document will be checked. The actual document
      * may contain additional fields.
-     *
-     * @param array|object $expectedDocument
-     * @param array|object $actualDocument
      */
-    public function assertMatchesDocument($expectedDocument, $actualDocument)
+    public function assertMatchesDocument(array|object $expectedDocument, array|object $actualDocument): void
     {
-        $normalizedExpectedDocument = $this->normalizeBSON($expectedDocument);
-        $normalizedActualDocument = $this->normalizeBSON($actualDocument);
-
-        $extraKeys = [];
-
-        /* Avoid unsetting fields while we're iterating on the ArrayObject to
-         * work around https://bugs.php.net/bug.php?id=70246 */
-        foreach ($normalizedActualDocument as $key => $value) {
-            if (! $normalizedExpectedDocument->offsetExists($key)) {
-                $extraKeys[] = $key;
-            }
-        }
-
-        foreach ($extraKeys as $key) {
-            $normalizedActualDocument->offsetUnset($key);
-        }
-
-        $this->assertEquals(
-            toJSON(fromPHP($normalizedExpectedDocument)),
-            toJSON(fromPHP($normalizedActualDocument))
-        );
+        (new DocumentsMatchConstraint($expectedDocument, true, true))->evaluate($actualDocument);
     }
 
     /**
@@ -81,19 +102,16 @@ abstract class TestCase extends BaseTestCase
      *
      * The actual document will be compared directly with the expected document
      * and may not contain extra fields.
-     *
-     * @param array|object $expectedDocument
-     * @param array|object $actualDocument
      */
-    public function assertSameDocument($expectedDocument, $actualDocument)
+    public function assertSameDocument(array|object $expectedDocument, array|object $actualDocument): void
     {
         $this->assertEquals(
-            toJSON(fromPHP($this->normalizeBSON($expectedDocument))),
-            toJSON(fromPHP($this->normalizeBSON($actualDocument)))
+            Document::fromPHP($this->normalizeBSON($expectedDocument))->toRelaxedExtendedJSON(),
+            Document::fromPHP($this->normalizeBSON($actualDocument))->toRelaxedExtendedJSON(),
         );
     }
 
-    public function assertSameDocuments(array $expectedDocuments, $actualDocuments)
+    public function assertSameDocuments(array $expectedDocuments, $actualDocuments): void
     {
         if ($actualDocuments instanceof Traversable) {
             $actualDocuments = iterator_to_array($actualDocuments);
@@ -103,161 +121,231 @@ abstract class TestCase extends BaseTestCase
             throw new InvalidArgumentException('$actualDocuments is not an array or Traversable');
         }
 
-        $normalizeRootDocuments = function ($document) {
-            return toJSON(fromPHP($this->normalizeBSON($document)));
-        };
+        $normalizeRootDocuments = fn ($document) => Document::fromPHP($this->normalizeBSON($document))->toRelaxedExtendedJSON();
 
         $this->assertEquals(
             array_map($normalizeRootDocuments, $expectedDocuments),
-            array_map($normalizeRootDocuments, $actualDocuments)
+            array_map($normalizeRootDocuments, $actualDocuments),
         );
     }
 
-    public function provideInvalidArrayValues()
+    /**
+     * Compatibility method as PHPUnit 9 no longer includes this method.
+     */
+    public function dataDescription(): string
     {
-        return $this->wrapValuesForDataProvider($this->getInvalidArrayValues());
+        $dataName = $this->dataName();
+
+        return is_string($dataName) ? $dataName : '';
     }
 
-    public function provideInvalidDocumentValues()
+    final public static function provideInvalidArrayValues(): array
     {
-        return $this->wrapValuesForDataProvider($this->getInvalidDocumentValues());
+        return self::wrapValuesForDataProvider(self::getInvalidArrayValues());
     }
 
-    protected function assertDeprecated(callable $execution)
+    final public static function provideInvalidDocumentValues(): array
+    {
+        return self::wrapValuesForDataProvider(self::getInvalidDocumentValues());
+    }
+
+    final public static function provideInvalidIntegerValues(): array
+    {
+        return self::wrapValuesForDataProvider(self::getInvalidIntegerValues());
+    }
+
+    final public static function provideInvalidStringValues(): array
+    {
+        return self::wrapValuesForDataProvider(self::getInvalidStringValues());
+    }
+
+    protected function assertDeprecated(callable $execution): mixed
+    {
+        return $this->assertError(E_USER_DEPRECATED | E_DEPRECATED, $execution);
+    }
+
+    protected function assertError(int $levels, callable $execution): mixed
     {
         $errors = [];
 
-        set_error_handler(function ($errno, $errstr) use (&$errors) {
+        set_error_handler(function ($errno, $errstr) use (&$errors): void {
             $errors[] = $errstr;
-        }, E_USER_DEPRECATED);
+        }, $levels);
 
         try {
-            call_user_func($execution);
+            $result = call_user_func($execution);
         } finally {
             restore_error_handler();
         }
 
         $this->assertCount(1, $errors);
+
+        return $result;
+    }
+
+    protected static function createOptionDataProvider(array $options): array
+    {
+        $data = [];
+
+        foreach ($options as $option => $values) {
+            foreach ($values as $key => $value) {
+                $dataKey = $option . '_' . $key;
+                if (is_int($key)) {
+                    $dataKey .= '_' . get_debug_type($value);
+                }
+
+                $data[$dataKey] = [[$option => $value]];
+            }
+        }
+
+        return $data;
     }
 
     /**
      * Return the test collection name.
-     *
-     * @return string
      */
-    protected function getCollectionName()
+    protected function getCollectionName(): string
     {
         $class = new ReflectionClass($this);
 
-        return sprintf('%s.%s', $class->getShortName(), hash('crc32b', $this->getName()));
-    }
-
-    /**
-     * Return the test database name.
-     *
-     * @return string
-     */
-    protected function getDatabaseName()
-    {
-        return getenv('MONGODB_DATABASE') ?: 'phplib_test';
+        return sprintf('%s.%s', $class->getShortName(), hash('xxh3', $this->name()));
     }
 
     /**
      * Return a list of invalid array values.
-     *
-     * @return array
      */
-    protected function getInvalidArrayValues()
+    protected static function getInvalidArrayValues(bool $includeNull = false): array
     {
-        return [123, 3.14, 'foo', true, new stdClass()];
+        return [123, 3.14, 'foo', true, new stdClass(), ...($includeNull ? [null] : [])];
     }
 
     /**
      * Return a list of invalid boolean values.
-     *
-     * @return array
      */
-    protected function getInvalidBooleanValues()
+    protected static function getInvalidBooleanValues(bool $includeNull = false): array
     {
-        return [123, 3.14, 'foo', [], new stdClass()];
+        return [123, 3.14, 'foo', [], new stdClass(), ...($includeNull ? [null] : [])];
     }
 
     /**
      * Return a list of invalid document values.
-     *
-     * @return array
      */
-    protected function getInvalidDocumentValues()
+    protected static function getInvalidDocumentValues(bool $includeNull = false): array
     {
-        return [123, 3.14, 'foo', true];
+        return [123, 3.14, 'foo', true, PackedArray::fromPHP([]), ...($includeNull ? [null] : [])];
+    }
+
+    protected static function getInvalidObjectValues(bool $includeNull = false): array
+    {
+        return [123, 3.14, 'foo', true, [], new stdClass(), ...($includeNull ? [null] : [])];
+    }
+
+    protected static function getInvalidDocumentCodecValues(): array
+    {
+        return [123, 3.14, 'foo', true, [], new stdClass(), self::createStub(Codec::class)];
+    }
+
+    /**
+     * Return a list of invalid hint values.
+     */
+    protected static function getInvalidHintValues(): array
+    {
+        return [123, 3.14, true, PackedArray::fromPHP([])];
     }
 
     /**
      * Return a list of invalid integer values.
-     *
-     * @return array
      */
-    protected function getInvalidIntegerValues()
+    protected static function getInvalidIntegerValues(bool $includeNull = false): array
     {
-        return [3.14, 'foo', true, [], new stdClass()];
+        return [3.14, 'foo', true, [], new stdClass(), ...($includeNull ? [null] : [])];
     }
 
     /**
      * Return a list of invalid ReadPreference values.
-     *
-     * @return array
      */
-    protected function getInvalidReadConcernValues()
+    protected static function getInvalidReadConcernValues(bool $includeNull = false): array
     {
-        return [123, 3.14, 'foo', true, [], new stdClass(), new ReadPreference(ReadPreference::RP_PRIMARY), new WriteConcern(1)];
+        return [
+            123,
+            3.14,
+            'foo',
+            true,
+            [],
+            new stdClass(),
+            new ReadPreference(ReadPreference::PRIMARY),
+            new WriteConcern(1),
+            ...($includeNull ? ['null' => null] : []),
+        ];
     }
 
     /**
      * Return a list of invalid ReadPreference values.
-     *
-     * @return array
      */
-    protected function getInvalidReadPreferenceValues()
+    protected static function getInvalidReadPreferenceValues(bool $includeNull = false): array
     {
-        return [123, 3.14, 'foo', true, [], new stdClass(), new ReadConcern(), new WriteConcern(1)];
+        return [
+            123,
+            3.14,
+            'foo',
+            true,
+            [],
+            new stdClass(),
+            new ReadConcern(),
+            new WriteConcern(1),
+            ...($includeNull ? ['null' => null] : []),
+        ];
     }
 
     /**
      * Return a list of invalid Session values.
-     *
-     * @return array
      */
-    protected function getInvalidSessionValues()
+    protected static function getInvalidSessionValues(bool $includeNull = false): array
     {
-        return [123, 3.14, 'foo', true, [], new stdClass(), new ReadConcern(), new ReadPreference(ReadPreference::RP_PRIMARY), new WriteConcern(1)];
+        return [
+            123,
+            3.14,
+            'foo',
+            true,
+            [],
+            new stdClass(),
+            new ReadConcern(),
+            new ReadPreference(ReadPreference::PRIMARY),
+            new WriteConcern(1),
+            ...($includeNull ? ['null' => null] : []),
+        ];
     }
 
     /**
      * Return a list of invalid string values.
-     *
-     * @return array
      */
-    protected function getInvalidStringValues()
+    protected static function getInvalidStringValues(bool $includeNull = false): array
     {
-        return [123, 3.14, true, [], new stdClass()];
+        return [123, 3.14, true, [], new stdClass(), ...($includeNull ? [null] : [])];
     }
 
     /**
      * Return a list of invalid WriteConcern values.
-     *
-     * @return array
      */
-    protected function getInvalidWriteConcernValues()
+    protected static function getInvalidWriteConcernValues(bool $includeNull = false): array
     {
-        return [123, 3.14, 'foo', true, [], new stdClass(), new ReadConcern(), new ReadPreference(ReadPreference::RP_PRIMARY)];
+        return [
+            123,
+            3.14,
+            'foo',
+            true,
+            [],
+            new stdClass(),
+            new ReadConcern(),
+            new ReadPreference(ReadPreference::PRIMARY),
+            ...($includeNull ? ['null' => null] : []),
+        ];
     }
 
     /**
      * Return the test namespace.
-     *
-     * @return string
      */
-    protected function getNamespace()
+    protected function getNamespace(): string
     {
          return sprintf('%s.%s', $this->getDatabaseName(), $this->getCollectionName());
     }
@@ -266,13 +354,10 @@ abstract class TestCase extends BaseTestCase
      * Wrap a list of values for use as a single-argument data provider.
      *
      * @param array $values List of values
-     * @return array
      */
-    protected function wrapValuesForDataProvider(array $values)
+    final protected static function wrapValuesForDataProvider(array $values): array
     {
-        return array_map(function ($value) {
-            return [$value];
-        }, $values);
+        return array_map(fn ($value) => [$value], $values);
     }
 
     /**
@@ -282,11 +367,9 @@ abstract class TestCase extends BaseTestCase
      * its type and keys. Document fields will be sorted alphabetically. Each
      * value within the array or document will then be normalized recursively.
      *
-     * @param array|object $bson
-     * @return BSONDocument|BSONArray
      * @throws InvalidArgumentException if $bson is not an array or object
      */
-    private function normalizeBSON($bson)
+    private function normalizeBSON(array|object $bson): BSONDocument|BSONArray
     {
         if (! is_array($bson) && ! is_object($bson)) {
             throw new InvalidArgumentException('$bson is not an array or object');

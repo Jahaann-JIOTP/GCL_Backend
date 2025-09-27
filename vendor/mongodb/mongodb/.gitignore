@@ -11,3 +11,15 @@ phpunit.xml
 # phpcs
 .phpcs-cache
 phpcs.xml
+
+# psalm
+psalm.xml
+
+# phpbench
+.phpbench/
+phpbench.json
+
+# bref
+.serverless/
+
+mongocryptd.pid

@@ -2,42 +2,44 @@
 
 namespace MongoDB\Tests;
 
+use Iterator;
+use MongoDB\Builder\Pipeline;
+use MongoDB\Builder\Query;
+use MongoDB\Builder\Stage;
 use MongoDB\Client;
 use MongoDB\Driver\BulkWrite;
+use MongoDB\Driver\Command;
 use MongoDB\Driver\Manager;
+use MongoDB\Driver\Monitoring\CommandSubscriber;
 use MongoDB\Driver\Session;
 use MongoDB\Model\DatabaseInfo;
-use MongoDB\Model\DatabaseInfoIterator;
-use Symfony\Bridge\PhpUnit\SetUpTearDownTrait;
+
 use function call_user_func;
 use function is_callable;
+use function iterator_to_array;
 use function sprintf;
-use function version_compare;
 
 /**
  * Functional tests for the Client class.
  */
 class ClientFunctionalTest extends FunctionalTestCase
 {
-    use SetUpTearDownTrait;
+    private Client $client;
 
-    /** @var Client */
-    private $client;
-
-    private function doSetUp()
+    public function setUp(): void
     {
         parent::setUp();
 
-        $this->client = new Client(static::getUri());
+        $this->client = static::createTestClient();
         $this->client->dropDatabase($this->getDatabaseName());
     }
 
-    public function testGetManager()
+    public function testGetManager(): void
     {
         $this->assertInstanceOf(Manager::class, $this->client->getManager());
     }
 
-    public function testDropDatabase()
+    public function testDropDatabase(): void
     {
         $bulkWrite = new BulkWrite();
         $bulkWrite->insert(['x' => 1]);
@@ -45,12 +47,11 @@ class ClientFunctionalTest extends FunctionalTestCase
         $writeResult = $this->manager->executeBulkWrite($this->getNamespace(), $bulkWrite);
         $this->assertEquals(1, $writeResult->getInsertedCount());
 
-        $commandResult = $this->client->dropDatabase($this->getDatabaseName());
-        $this->assertCommandSucceeded($commandResult);
+        $this->client->dropDatabase($this->getDatabaseName());
         $this->assertCollectionCount($this->getNamespace(), 0);
     }
 
-    public function testListDatabases()
+    public function testListDatabases(): void
     {
         $bulkWrite = new BulkWrite();
         $bulkWrite->insert(['x' => 1]);
@@ -60,17 +61,31 @@ class ClientFunctionalTest extends FunctionalTestCase
 
         $databases = $this->client->listDatabases();
 
-        $this->assertInstanceOf(DatabaseInfoIterator::class, $databases);
+        $this->assertInstanceOf(Iterator::class, $databases);
 
         foreach ($databases as $database) {
             $this->assertInstanceOf(DatabaseInfo::class, $database);
         }
 
-        $that = $this;
-        $this->assertDatabaseExists($this->getDatabaseName(), function (DatabaseInfo $info) use ($that) {
-            $that->assertFalse($info->isEmpty());
-            $that->assertGreaterThan(0, $info->getSizeOnDisk());
+        $this->assertDatabaseExists($this->getDatabaseName(), function (DatabaseInfo $info): void {
+            $this->assertFalse($info->isEmpty());
+            $this->assertGreaterThan(0, $info->getSizeOnDisk());
         });
+    }
+
+    public function testListDatabaseNames(): void
+    {
+        $bulkWrite = new BulkWrite();
+        $bulkWrite->insert(['x' => 1]);
+
+        $writeResult = $this->manager->executeBulkWrite($this->getNamespace(), $bulkWrite);
+        $this->assertEquals(1, $writeResult->getInsertedCount());
+
+        foreach ($this->client->listDatabaseNames() as $database) {
+            $this->assertIsString($database);
+        }
+
+        $this->assertContains($this->getDatabaseName(), $this->client->listDatabaseNames(), sprintf('Database %s does not exist on the server', $this->getDatabaseName()));
     }
 
     /**
@@ -80,11 +95,8 @@ class ClientFunctionalTest extends FunctionalTestCase
      * argument as its first and only parameter. If a DatabaseInfo matching
      * the given name is found, it will be passed to the callback, which may
      * perform additional assertions.
-     *
-     * @param string   $databaseName
-     * @param callable $callback
      */
-    private function assertDatabaseExists($databaseName, $callback = null)
+    private function assertDatabaseExists(string $databaseName, ?callable $callback = null): void
     {
         if ($callback !== null && ! is_callable($callback)) {
             throw new InvalidArgumentException('$callback is not a callable');
@@ -108,11 +120,45 @@ class ClientFunctionalTest extends FunctionalTestCase
         }
     }
 
-    public function testStartSession()
+    public function testStartSession(): void
     {
-        if (version_compare($this->getFeatureCompatibilityVersion(), '3.6', '<')) {
-            $this->markTestSkipped('startSession() is only supported on FCV 3.6 or higher');
-        }
         $this->assertInstanceOf(Session::class, $this->client->startSession());
+    }
+
+    public function testAddAndRemoveSubscriber(): void
+    {
+        $client = static::createTestClient();
+
+        $addedSubscriber = $this->createMock(CommandSubscriber::class);
+        $addedSubscriber->expects($this->once())->method('commandStarted');
+        $client->addSubscriber($addedSubscriber);
+
+        $removedSubscriber = $this->createMock(CommandSubscriber::class);
+        $removedSubscriber->expects($this->never())->method('commandStarted');
+        $client->addSubscriber($removedSubscriber);
+        $client->removeSubscriber($removedSubscriber);
+
+        $client->getManager()->executeCommand('admin', new Command(['ping' => 1]));
+    }
+
+    public function testWatchWithBuilderPipeline(): void
+    {
+        $this->skipIfChangeStreamIsNotSupported();
+
+        if ($this->isShardedCluster()) {
+            $this->markTestSkipped('Test does not apply on sharded clusters: need more than a single getMore call on the change stream.');
+        }
+
+        $pipeline = new Pipeline(
+            Stage::match(operationType: Query::eq('insert')),
+        );
+        // Extract the list of stages for arg type restriction
+        $pipeline = iterator_to_array($pipeline);
+
+        $changeStream = $this->client->watch($pipeline);
+        $this->client->selectCollection($this->getDatabaseName(), $this->getCollectionName())->insertOne(['x' => 3]);
+        $changeStream->next();
+        $this->assertTrue($changeStream->valid());
+        $this->assertEquals('insert', $changeStream->current()->operationType);
     }
 }

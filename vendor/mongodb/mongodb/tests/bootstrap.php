@@ -1,23 +1,22 @@
 <?php
 
-if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
-    // Dependencies were installed with Composer and this is the main project
-    $loader = require_once __DIR__ . '/../vendor/autoload.php';
-} elseif (file_exists(__DIR__ . '/../../../../autoload.php')) {
-    // We're installed as a dependency in another project's `vendor` directory
-    $loader = require_once __DIR__ . '/../../../../autoload.php';
-} else {
-    throw new Exception('Can\'t find autoload.php. Did you install dependencies with Composer?');
-}
+use MongoDB\Tests\Comparator\Int64Comparator;
+use MongoDB\Tests\Comparator\ServerComparator;
+use MongoDB\Tests\TestCase;
+use SebastianBergmann\Comparator\Factory as ComparatorFactory;
 
-if (! class_exists(PHPUnit\Framework\Error\Warning::class)) {
-    class_alias(PHPUnit_Framework_Error_Warning::class, PHPUnit\Framework\Error\Warning::class);
-}
+require __DIR__ . '/../vendor/autoload.php';
 
-if (! class_exists(PHPUnit\Framework\Constraint\Constraint::class)) {
-    class_alias(PHPUnit_Framework_Constraint::class, PHPUnit\Framework\Constraint\Constraint::class);
-}
+// Register custom comparators
+ComparatorFactory::getInstance()->register(new Int64Comparator());
+ComparatorFactory::getInstance()->register(new ServerComparator());
 
-if (! class_exists(PHPUnit\Framework\ExpectationFailedException::class)) {
-    class_alias(PHPUnit_Framework_ExpectationFailedException::class, PHPUnit\Framework\ExpectationFailedException::class);
-}
+/* Ugly workaround for event system changes in PHPUnit
+ * PHPUnit 10 introduces a new event system, and at the same time removes the
+ * event system present in previous versions. This makes it near impossible to
+ * support PHPUnit 8.5 (required for PHP 7.2) and PHPUnit 9 (PHP < 8.1)
+ * alongside PHPUnit 10. For this reason, we use this bootstrap file to print
+ * test configuration summary.
+ * @todo PHP_VERSION_ID >= 80100: Remove this and use an extension
+ */
+TestCase::printConfiguration();

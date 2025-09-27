@@ -2,20 +2,26 @@
 
 namespace MongoDB\Tests;
 
+use MongoDB\BSON\Binary;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
-use MongoDB\Client;
+use MongoDB\Collection;
 use MongoDB\Database;
 use MongoDB\Driver\Cursor;
-use MongoDB\Driver\Exception\ConnectionTimeoutException;
+use MongoDB\Driver\Exception\CommandException;
+use MongoDB\Driver\Exception\Exception;
 use MongoDB\Driver\ReadPreference;
-use MongoDB\Driver\WriteConcern;
-use Symfony\Bridge\PhpUnit\SetUpTearDownTrait;
+use MongoDB\Tests\SpecTests\ClientSideEncryptionSpecTest;
+use PHPUnit\Framework\Attributes\DoesNotPerformAssertions;
+use PHPUnit\Framework\Attributes\Group;
+
+use function base64_decode;
 use function in_array;
+use function microtime;
 use function ob_end_clean;
 use function ob_start;
+use function usleep;
 use function var_dump;
-use function version_compare;
 
 /**
  * Documentation examples to be parsed for inclusion in the MongoDB manual.
@@ -23,29 +29,13 @@ use function version_compare;
  * @see https://jira.mongodb.org/browse/DRIVERS-356
  * @see https://jira.mongodb.org/browse/DRIVERS-488
  * @see https://jira.mongodb.org/browse/DRIVERS-547
+ * @see https://jira.mongodb.org/browse/DRIVERS-2838
  */
 class DocumentationExamplesTest extends FunctionalTestCase
 {
-    use SetUpTearDownTrait;
-
-    private function doSetUp()
+    public function testExample_1_2(): void
     {
-        parent::setUp();
-
-        $this->dropCollection();
-    }
-
-    private function doTearDown()
-    {
-        if ($this->hasFailed()) {
-            return;
-        }
-
-        $this->dropCollection();
-    }
-
-    public function testExample_1_2()
-    {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 1
@@ -68,8 +58,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCursorCount(1, $cursor);
     }
 
-    public function testExample_3()
+    public function testExample_3(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 3
@@ -99,11 +90,13 @@ class DocumentationExamplesTest extends FunctionalTestCase
         foreach ($insertManyResult->getInsertedIds() as $id) {
             $this->assertInstanceOf(ObjectId::class, $id);
         }
+
         $this->assertInventoryCount(3);
     }
 
-    public function testExample_6_13()
+    public function testExample_6_13(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 6
@@ -145,6 +138,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         foreach ($insertManyResult->getInsertedIds() as $id) {
             $this->assertInstanceOf(ObjectId::class, $id);
         }
+
         $this->assertInventoryCount(5);
 
         // Start Example 7
@@ -205,8 +199,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCursorCount(2, $cursor);
     }
 
-    public function testExample_14_19()
+    public function testExample_14_19(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 14
@@ -248,6 +243,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         foreach ($insertManyResult->getInsertedIds() as $id) {
             $this->assertInstanceOf(ObjectId::class, $id);
         }
+
         $this->assertInventoryCount(5);
 
         // Start Example 15
@@ -285,8 +281,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCursorCount(1, $cursor);
     }
 
-    public function testExample_20_28()
+    public function testExample_20_28(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 20
@@ -328,6 +325,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         foreach ($insertManyResult->getInsertedIds() as $id) {
             $this->assertInstanceOf(ObjectId::class, $id);
         }
+
         $this->assertInventoryCount(5);
 
         // Start Example 21
@@ -391,8 +389,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCursorCount(1, $cursor);
     }
 
-    public function testExample_29_37()
+    public function testExample_29_37(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 29
@@ -438,6 +437,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         foreach ($insertManyResult->getInsertedIds() as $id) {
             $this->assertInstanceOf(ObjectId::class, $id);
         }
+
         $this->assertInventoryCount(5);
 
         // Start Example 30
@@ -489,8 +489,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCursorCount(2, $cursor);
     }
 
-    public function testExample_38_41()
+    public function testExample_38_41(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 38
@@ -504,6 +505,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         foreach ($insertManyResult->getInsertedIds() as $id) {
             $this->assertIsInt($id);
         }
+
         $this->assertInventoryCount(2);
 
         // Start Example 39
@@ -525,8 +527,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCursorCount(1, $cursor);
     }
 
-    public function testExample_42_50()
+    public function testExample_42_50(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 42
@@ -579,6 +582,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         foreach ($insertManyResult->getInsertedIds() as $id) {
             $this->assertInstanceOf(ObjectId::class, $id);
         }
+
         $this->assertInventoryCount(5);
 
         // Start Example 43
@@ -589,14 +593,14 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCount(3, $documents);
         foreach ($documents as $document) {
             foreach (['_id', 'item', 'status', 'size', 'instock'] as $field) {
-                $this->assertObjectHasAttribute($field, $document);
+                $this->assertObjectHasProperty($field, $document);
             }
         }
 
         // Start Example 44
         $cursor = $db->inventory->find(
             ['status' => 'A'],
-            ['projection' => ['item' => 1, 'status' => 1]]
+            ['projection' => ['item' => 1, 'status' => 1]],
         );
         // End Example 44
 
@@ -604,17 +608,18 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCount(3, $documents);
         foreach ($documents as $document) {
             foreach (['_id', 'item', 'status'] as $field) {
-                $this->assertObjectHasAttribute($field, $document);
+                $this->assertObjectHasProperty($field, $document);
             }
+
             foreach (['size', 'instock'] as $field) {
-                $this->assertObjectNotHasAttribute($field, $document);
+                $this->assertObjectNotHasProperty($field, $document);
             }
         }
 
         // Start Example 45
         $cursor = $db->inventory->find(
             ['status' => 'A'],
-            ['projection' => ['item' => 1, 'status' => 1, '_id' => 0]]
+            ['projection' => ['item' => 1, 'status' => 1, '_id' => 0]],
         );
         // End Example 45
 
@@ -622,17 +627,18 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCount(3, $documents);
         foreach ($documents as $document) {
             foreach (['item', 'status'] as $field) {
-                $this->assertObjectHasAttribute($field, $document);
+                $this->assertObjectHasProperty($field, $document);
             }
+
             foreach (['_id', 'size', 'instock'] as $field) {
-                $this->assertObjectNotHasAttribute($field, $document);
+                $this->assertObjectNotHasProperty($field, $document);
             }
         }
 
         // Start Example 46
         $cursor = $db->inventory->find(
             ['status' => 'A'],
-            ['projection' => ['status' => 0, 'instock' => 0]]
+            ['projection' => ['status' => 0, 'instock' => 0]],
         );
         // End Example 46
 
@@ -640,17 +646,18 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCount(3, $documents);
         foreach ($documents as $document) {
             foreach (['_id', 'item', 'size'] as $field) {
-                $this->assertObjectHasAttribute($field, $document);
+                $this->assertObjectHasProperty($field, $document);
             }
+
             foreach (['status', 'instock'] as $field) {
-                $this->assertObjectNotHasAttribute($field, $document);
+                $this->assertObjectNotHasProperty($field, $document);
             }
         }
 
         // Start Example 47
         $cursor = $db->inventory->find(
             ['status' => 'A'],
-            ['projection' => ['item' => 1, 'status' => 1, 'size.uom' => 1]]
+            ['projection' => ['item' => 1, 'status' => 1, 'size.uom' => 1]],
         );
         // End Example 47
 
@@ -658,18 +665,19 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCount(3, $documents);
         foreach ($documents as $document) {
             foreach (['_id', 'item', 'status', 'size'] as $field) {
-                $this->assertObjectHasAttribute($field, $document);
+                $this->assertObjectHasProperty($field, $document);
             }
-            $this->assertObjectNotHasAttribute('instock', $document);
-            $this->assertObjectHasAttribute('uom', $document->size);
-            $this->assertObjectNotHasAttribute('h', $document->size);
-            $this->assertObjectNotHasAttribute('w', $document->size);
+
+            $this->assertObjectNotHasProperty('instock', $document);
+            $this->assertObjectHasProperty('uom', $document->size);
+            $this->assertObjectNotHasProperty('h', $document->size);
+            $this->assertObjectNotHasProperty('w', $document->size);
         }
 
         // Start Example 48
         $cursor = $db->inventory->find(
             ['status' => 'A'],
-            ['projection' => ['size.uom' => 0]]
+            ['projection' => ['size.uom' => 0]],
         );
         // End Example 48
 
@@ -677,17 +685,18 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCount(3, $documents);
         foreach ($documents as $document) {
             foreach (['_id', 'item', 'status', 'size', 'instock'] as $field) {
-                $this->assertObjectHasAttribute($field, $document);
+                $this->assertObjectHasProperty($field, $document);
             }
-            $this->assertObjectHasAttribute('h', $document->size);
-            $this->assertObjectHasAttribute('w', $document->size);
-            $this->assertObjectNotHasAttribute('uom', $document->size);
+
+            $this->assertObjectHasProperty('h', $document->size);
+            $this->assertObjectHasProperty('w', $document->size);
+            $this->assertObjectNotHasProperty('uom', $document->size);
         }
 
         // Start Example 49
         $cursor = $db->inventory->find(
             ['status' => 'A'],
-            ['projection' => ['item' => 1, 'status' => 1, 'instock.qty' => 1]]
+            ['projection' => ['item' => 1, 'status' => 1, 'instock.qty' => 1]],
         );
         // End Example 49
 
@@ -695,19 +704,20 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCount(3, $documents);
         foreach ($documents as $document) {
             foreach (['_id', 'item', 'status', 'instock'] as $field) {
-                $this->assertObjectHasAttribute($field, $document);
+                $this->assertObjectHasProperty($field, $document);
             }
-            $this->assertObjectNotHasAttribute('size', $document);
+
+            $this->assertObjectNotHasProperty('size', $document);
             foreach ($document->instock as $instock) {
-                $this->assertObjectHasAttribute('qty', $instock);
-                $this->assertObjectNotHasAttribute('warehouse', $instock);
+                $this->assertObjectHasProperty('qty', $instock);
+                $this->assertObjectNotHasProperty('warehouse', $instock);
             }
         }
 
         // Start Example 50
         $cursor = $db->inventory->find(
             ['status' => 'A'],
-            ['projection' => ['item' => 1, 'status' => 1, 'instock' => ['$slice' => -1]]]
+            ['projection' => ['item' => 1, 'status' => 1, 'instock' => ['$slice' => -1]]],
         );
         // End Example 50
 
@@ -715,15 +725,82 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCount(3, $documents);
         foreach ($documents as $document) {
             foreach (['_id', 'item', 'status', 'instock'] as $field) {
-                $this->assertObjectHasAttribute($field, $document);
+                $this->assertObjectHasProperty($field, $document);
             }
-            $this->assertObjectNotHasAttribute('size', $document);
+
+            $this->assertObjectNotHasProperty('size', $document);
             $this->assertCount(1, $document->instock);
         }
     }
 
-    public function testExample_51_54()
+    public function testAggregationProjectionExample_1(): void
     {
+        $this->skipIfServerVersion('<', '4.4.0', '$project syntax for find and findAndModify is not supported');
+
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
+        $db = new Database($this->manager, $this->getDatabaseName());
+
+        $db->inventory->insertMany([
+            [
+                'item' => 'journal',
+                'status' => 'A',
+                'size' => ['h' => 14, 'w' => 21, 'uom' => 'cm'],
+            ],
+            [
+                'item' => 'notebook',
+                'status' => 'A',
+                'size' => ['h' => 8.5, 'w' => 11, 'uom' => 'in'],
+            ],
+            [
+                'item' => 'paper',
+                'status' => 'D',
+                'size' => ['h' => 8.5, 'w' => 11, 'uom' => 'in'],
+            ],
+        ]);
+
+        // Start Aggregation Projection Example 1
+        $cursor = $db->inventory->find([], [
+            'projection' => [
+                '_id' => 0,
+                'item' => 1,
+                'status' => [
+                    '$switch' => [
+                        'branches' => [
+                            ['case' => ['$eq' => ['$status', 'A']], 'then' => 'Available'],
+                            ['case' => ['$eq' => ['$status', 'D']], 'then' => 'Discontinued'],
+                        ],
+                        'default' => 'No status found',
+                    ],
+                ],
+                'area' => [
+                    '$concat' => [
+                        ['$toString' => ['$multiply' => ['$size.h', '$size.w']]],
+                        ' ',
+                        '$size.uom',
+                    ],
+                ],
+                'reportNumber' => ['$literal' => 1],
+            ],
+        ]);
+        // End Aggregation Projection Example 1
+
+        $documents = $cursor->toArray();
+        $this->assertCount(3, $documents);
+        foreach ($documents as $document) {
+            foreach (['item', 'status', 'area', 'reportNumber'] as $field) {
+                $this->assertObjectHasProperty($field, $document);
+            }
+
+            $this->assertObjectNotHasProperty('_id', $document);
+            $this->assertIsString($document->status);
+            $this->assertIsString($document->area);
+            $this->assertSame(1, $document->reportNumber);
+        }
+    }
+
+    public function testExample_51_54(): void
+    {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 51
@@ -795,6 +872,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         foreach ($insertManyResult->getInsertedIds() as $id) {
             $this->assertInstanceOf(ObjectId::class, $id);
         }
+
         $this->assertInventoryCount(10);
 
         // Start Example 52
@@ -803,7 +881,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
             [
                 '$set' => ['size.uom' => 'cm', 'status' => 'P'],
                 '$currentDate' => ['lastModified' => true],
-            ]
+            ],
         );
         // End Example 52
 
@@ -823,7 +901,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
             [
                 '$set' => ['size.uom' => 'cm', 'status' => 'P'],
                 '$currentDate' => ['lastModified' => true],
-            ]
+            ],
         );
         // End Example 53
 
@@ -846,7 +924,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
                     ['warehouse' => 'A', 'qty' => 60],
                     ['warehouse' => 'B', 'qty' => 40],
                 ],
-            ]
+            ],
         );
         // End Example 54
 
@@ -862,8 +940,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertCursorCount(1, $cursor);
     }
 
-    public function testExample_55_58()
+    public function testExample_55_58(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Example 55
@@ -905,6 +984,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         foreach ($insertManyResult->getInsertedIds() as $id) {
             $this->assertInstanceOf(ObjectId::class, $id);
         }
+
         $this->assertInventoryCount(5);
 
         // Start Example 57
@@ -931,13 +1011,17 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertInventoryCount(0);
     }
 
-    public function testChangeStreamExample_1_4()
+    #[Group('matrix-testing-exclude-server-5.0-driver-4.0-topology-sharded_cluster')]
+    public function testChangeStreamExample_1_4(): void
     {
         $this->skipIfChangeStreamIsNotSupported();
 
+        if ($this->isShardedCluster()) {
+            $this->markTestSkipped('Test does not apply on sharded clusters: need more than a single getMore call on the change stream.');
+        }
+
+        $this->createCollection($this->getDatabaseName(), 'inventory');
         $db = new Database($this->manager, $this->getDatabaseName());
-        $db->dropCollection('inventory');
-        $db->createCollection('inventory');
 
         // Start Changestream Example 1
         $changeStream = $db->inventory->watch();
@@ -1033,8 +1117,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertNull($secondChange);
     }
 
-    public function testAggregation_example_1()
+    public function testAggregation_example_1(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'sales');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Aggregation Example 1
@@ -1047,8 +1132,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertInstanceOf(Cursor::class, $cursor);
     }
 
-    public function testAggregation_example_2()
+    public function testAggregation_example_2(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'sales');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Aggregation Example 2
@@ -1075,8 +1161,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertInstanceOf(Cursor::class, $cursor);
     }
 
-    public function testAggregation_example_3()
+    public function testAggregation_example_3(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'sales');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Aggregation Example 3
@@ -1113,14 +1200,12 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertInstanceOf(Cursor::class, $cursor);
     }
 
-    public function testAggregation_example_4()
+    public function testAggregation_example_4(): void
     {
-        if (version_compare($this->getServerVersion(), '3.6.0', '<')) {
-            $this->markTestSkipped('$lookup does not support "let" option');
-        }
-
+        $this->dropCollection($this->getDatabaseName(), 'air_airlines');
         $db = new Database($this->manager, $this->getDatabaseName());
 
+        // phpcs:disable Squiz.NamingConventions.ValidVariableName.MemberNotCamelCaps
         // Start Aggregation Example 4
         $cursor = $db->air_alliances->aggregate([
             [
@@ -1151,11 +1236,12 @@ class DocumentationExamplesTest extends FunctionalTestCase
             ],
         ]);
         // End Aggregation Example 4
+        // phpcs:enable
 
         $this->assertInstanceOf(Cursor::class, $cursor);
     }
 
-    public function testRunCommand_example_1()
+    public function testRunCommand_example_1(): void
     {
         $db = new Database($this->manager, $this->getDatabaseName());
 
@@ -1167,22 +1253,9 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertInstanceOf(Cursor::class, $cursor);
     }
 
-    public function testRunCommand_example_2()
+    public function testIndex_example_1(): void
     {
-        $db = new Database($this->manager, $this->getDatabaseName());
-        $db->dropCollection('restaurants');
-        $db->createCollection('restaurants');
-
-        // Start runCommand Example 2
-        $cursor = $db->command(['collStats' => 'restaurants']);
-        $result = $cursor->toArray()[0];
-        // End runCommand Example 2
-
-        $this->assertInstanceOf(Cursor::class, $cursor);
-    }
-
-    public function testIndex_example_1()
-    {
+        $this->dropCollection($this->getDatabaseName(), 'records');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Index Example 1
@@ -1192,14 +1265,15 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $this->assertEquals('score_1', $indexName);
     }
 
-    public function testIndex_example_2()
+    public function testIndex_example_2(): void
     {
+        $this->dropCollection($this->getDatabaseName(), 'restaurants');
         $db = new Database($this->manager, $this->getDatabaseName());
 
         // Start Index Example 2
         $indexName = $db->restaurants->createIndex(
             ['cuisine' => 1, 'name' => 1],
-            ['partialFilterExpression' => ['rating' => ['$gt' => 5]]]
+            ['partialFilterExpression' => ['rating' => ['$gt' => 5]]],
         );
         // End Index Example 2
 
@@ -1210,7 +1284,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
     // phpcs:disable Squiz.Commenting.FunctionComment.WrongStyle
     // phpcs:disable Squiz.WhiteSpace.FunctionSpacing.After
     // Start Transactions Intro Example 1
-    private function updateEmployeeInfo1(\MongoDB\Client $client, \MongoDB\Driver\Session $session)
+    private function updateEmployeeInfo1(\MongoDB\Client $client, \MongoDB\Driver\Session $session): void
     {
         $session->startTransaction([
             'readConcern' => new \MongoDB\Driver\ReadConcern('snapshot'),
@@ -1221,15 +1295,16 @@ class DocumentationExamplesTest extends FunctionalTestCase
             $client->hr->employees->updateOne(
                 ['employee' => 3],
                 ['$set' => ['status' => 'Inactive']],
-                ['session' => $session]
+                ['session' => $session],
             );
             $client->reporting->events->insertOne(
-                ['employee' => 3, 'status' => [ 'new' => 'Inactive', 'old' => 'Active']],
-                ['session' => $session]
+                ['employee' => 3, 'status' => ['new' => 'Inactive', 'old' => 'Active']],
+                ['session' => $session],
             );
         } catch (\MongoDB\Driver\Exception\Exception $error) {
             echo "Caught exception during transaction, aborting.\n";
             $session->abortTransaction();
+
             throw $error;
         }
 
@@ -1246,10 +1321,12 @@ class DocumentationExamplesTest extends FunctionalTestCase
                     continue;
                 } else {
                     echo "Error during commit ...\n";
+
                     throw $error;
                 }
             } catch (\MongoDB\Driver\Exception\Exception $error) {
                 echo "Error during commit ...\n";
+
                 throw $error;
             }
         }
@@ -1257,21 +1334,17 @@ class DocumentationExamplesTest extends FunctionalTestCase
     // End Transactions Intro Example 1
     // phpcs:enable
 
-    public function testTransactions_intro_example_1()
+    public function testTransactions_intro_example_1(): void
     {
         $this->skipIfTransactionsAreNotSupported();
 
         $this->assertNotNull('This test intentionally performs no assertions');
 
-        $client = new Client(static::getUri());
-
-        /* The WC is required: https://docs.mongodb.com/manual/core/transactions/#transactions-and-locks */
-        $client->hr->dropCollection('employees', ['writeConcern' => new WriteConcern('majority')]);
-        $client->reporting->dropCollection('events', ['writeConcern' => new WriteConcern('majority')]);
+        $client = static::createTestClient();
 
         /* Collections need to be created before a transaction starts */
-        $client->hr->createCollection('employees', ['writeConcern' => new WriteConcern('majority')]);
-        $client->reporting->createCollection('events', ['writeConcern' => new WriteConcern('majority')]);
+        $this->createCollection('hr', 'employees');
+        $this->createCollection('reporting', 'events');
 
         $session = $client->startSession();
 
@@ -1287,7 +1360,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
     // phpcs:disable Squiz.Commenting.FunctionComment.WrongStyle
     // phpcs:disable Squiz.WhiteSpace.FunctionSpacing.After
     // Start Transactions Retry Example 1
-    private function runTransactionWithRetry1(callable $txnFunc, \MongoDB\Client $client, \MongoDB\Driver\Session $session)
+    private function runTransactionWithRetry1(callable $txnFunc, \MongoDB\Client $client, \MongoDB\Driver\Session $session): void
     {
         while (true) {
             try {
@@ -1316,7 +1389,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
     // phpcs:disable Squiz.Commenting.FunctionComment.WrongStyle
     // phpcs:disable Squiz.WhiteSpace.FunctionSpacing.After
     // Start Transactions Retry Example 2
-    private function commitWithRetry2(\MongoDB\Driver\Session $session)
+    private function commitWithRetry2(\MongoDB\Driver\Session $session): void
     {
         while (true) {
             try {
@@ -1331,10 +1404,12 @@ class DocumentationExamplesTest extends FunctionalTestCase
                     continue;
                 } else {
                     echo "Error during commit ...\n";
+
                     throw $error;
                 }
             } catch (\MongoDB\Driver\Exception\Exception $error) {
                 echo "Error during commit ...\n";
+
                 throw $error;
             }
         }
@@ -1346,7 +1421,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
     // phpcs:disable Squiz.Commenting.FunctionComment.WrongStyle
     // phpcs:disable Squiz.WhiteSpace.FunctionSpacing.After
     // Start Transactions Retry Example 3
-    private function runTransactionWithRetry3(callable $txnFunc, \MongoDB\Client $client, \MongoDB\Driver\Session $session)
+    private function runTransactionWithRetry3(callable $txnFunc, \MongoDB\Client $client, \MongoDB\Driver\Session $session): void
     {
         while (true) {
             try {
@@ -1367,7 +1442,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         }
     }
 
-    private function commitWithRetry3(\MongoDB\Driver\Session $session)
+    private function commitWithRetry3(\MongoDB\Driver\Session $session): void
     {
         while (true) {
             try {
@@ -1382,20 +1457,22 @@ class DocumentationExamplesTest extends FunctionalTestCase
                     continue;
                 } else {
                     echo "Error during commit ...\n";
+
                     throw $error;
                 }
             } catch (\MongoDB\Driver\Exception\Exception $error) {
                 echo "Error during commit ...\n";
+
                 throw $error;
             }
         }
     }
 
-    private function updateEmployeeInfo3(\MongoDB\Client $client, \MongoDB\Driver\Session $session)
+    private function updateEmployeeInfo3(\MongoDB\Client $client, \MongoDB\Driver\Session $session): void
     {
         $session->startTransaction([
-            'readConcern' => new \MongoDB\Driver\ReadConcern("snapshot"),
-            'readPrefernece' => new \MongoDB\Driver\ReadPreference(\MongoDB\Driver\ReadPreference::RP_PRIMARY),
+            'readConcern' => new \MongoDB\Driver\ReadConcern('snapshot'),
+            'readPrefernece' => new \MongoDB\Driver\ReadPreference(\MongoDB\Driver\ReadPreference::PRIMARY),
             'writeConcern' => new \MongoDB\Driver\WriteConcern(\MongoDB\Driver\WriteConcern::MAJORITY),
         ]);
 
@@ -1403,50 +1480,47 @@ class DocumentationExamplesTest extends FunctionalTestCase
             $client->hr->employees->updateOne(
                 ['employee' => 3],
                 ['$set' => ['status' => 'Inactive']],
-                ['session' => $session]
+                ['session' => $session],
             );
             $client->reporting->events->insertOne(
-                ['employee' => 3, 'status' => [ 'new' => 'Inactive', 'old' => 'Active']],
-                ['session' => $session]
+                ['employee' => 3, 'status' => ['new' => 'Inactive', 'old' => 'Active']],
+                ['session' => $session],
             );
         } catch (\MongoDB\Driver\Exception\Exception $error) {
             echo "Caught exception during transaction, aborting.\n";
             $session->abortTransaction();
+
             throw $error;
         }
 
         $this->commitWithRetry3($session);
     }
 
-    private function doUpdateEmployeeInfo(\MongoDB\Client $client)
+    private function doUpdateEmployeeInfo(\MongoDB\Client $client): void
     {
         // Start a session.
         $session = $client->startSession();
 
         try {
             $this->runTransactionWithRetry3([$this, 'updateEmployeeInfo3'], $client, $session);
-        } catch (\MongoDB\Driver\Exception\Exception $error) {
+        } catch (\MongoDB\Driver\Exception\Exception) {
             // Do something with error
         }
     }
     // End Transactions Retry Example 3
     // phpcs:enable
 
-    public function testTransactions_retry_example_3()
+    public function testTransactions_retry_example_3(): void
     {
         $this->skipIfTransactionsAreNotSupported();
 
         $this->assertNotNull('This test intentionally performs no assertions');
 
-        $client = new Client(static::getUri());
-
-        /* The WC is required: https://docs.mongodb.com/manual/core/transactions/#transactions-and-locks */
-        $client->hr->dropCollection('employees', ['writeConcern' => new WriteConcern('majority')]);
-        $client->reporting->dropCollection('events', ['writeConcern' => new WriteConcern('majority')]);
+        $client = static::createTestClient();
 
         /* Collections need to be created before a transaction starts */
-        $client->hr->createCollection('employees', ['writeConcern' => new WriteConcern('majority')]);
-        $client->reporting->createCollection('events', ['writeConcern' => new WriteConcern('majority')]);
+        $this->createCollection('hr', 'employees');
+        $this->createCollection('reporting', 'events');
 
         ob_start();
         try {
@@ -1456,29 +1530,28 @@ class DocumentationExamplesTest extends FunctionalTestCase
         }
     }
 
-    public function testCausalConsistency()
+    public function testCausalConsistency(): void
     {
         $this->skipIfCausalConsistencyIsNotSupported();
-
-        try {
-            $this->manager->selectServer(new ReadPreference('secondary'));
-        } catch (ConnectionTimeoutException $e) {
-            $this->markTestSkipped('Secondary is not available');
-        }
 
         $this->assertNotNull('This test intentionally performs no assertions');
 
         // Prep
-        $client = new Client(static::getUri());
-        $items = $client->selectDatabase(
-            'test',
-            [ 'writeConcern' => new WriteConcern(WriteConcern::MAJORITY) ]
-        )->items;
-
-        $items->drop();
+        $client = static::createTestClient();
+        $items = $this->createCollection('test', 'items');
         $items->insertOne(
-            [ 'sku' => '111', 'name' => 'Peanuts', 'start' => new UTCDateTime() ]
+            ['sku' => '111', 'name' => 'Peanuts', 'start' => new UTCDateTime()],
         );
+
+        try {
+            /* In sharded clusters, server selection ignores the read preference
+             * mode, so using $manager->selectServer does not work here. To work
+             * around this, we run a query on a secondary and rely on an
+             * exception to let us know that no secondary is available. */
+            $items->countDocuments([], ['readPreference' => new ReadPreference(ReadPreference::SECONDARY)]);
+        } catch (Exception) {
+            $this->markTestSkipped('Secondary is not available');
+        }
 
         // phpcs:disable SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly
         // Start Causal Consistency Example 1
@@ -1487,23 +1560,23 @@ class DocumentationExamplesTest extends FunctionalTestCase
             [
                 'readConcern' => new \MongoDB\Driver\ReadConcern(\MongoDB\Driver\ReadConcern::MAJORITY),
                 'writeConcern' => new \MongoDB\Driver\WriteConcern(\MongoDB\Driver\WriteConcern::MAJORITY, 1000),
-            ]
+            ],
         )->items;
 
         $s1 = $client->startSession(
-            [ 'causalConsistency' => true ]
+            ['causalConsistency' => true],
         );
 
         $currentDate = new \MongoDB\BSON\UTCDateTime();
 
         $items->updateOne(
-            [ 'sku' => '111', 'end' => [ '$exists' => false ] ],
-            [ '$set' => [ 'end' => $currentDate ] ],
-            [ 'session' => $s1 ]
+            ['sku' => '111', 'end' => ['$exists' => false]],
+            ['$set' => ['end' => $currentDate]],
+            ['session' => $s1],
         );
         $items->insertOne(
-            [ 'sku' => '111-nuts', 'name' => 'Pecans', 'start' => $currentDate ],
-            [ 'session' => $s1 ]
+            ['sku' => '111-nuts', 'name' => 'Pecans', 'start' => $currentDate],
+            ['session' => $s1],
         );
         // End Causal Consistency Example 1
         // phpcs:enable
@@ -1513,7 +1586,7 @@ class DocumentationExamplesTest extends FunctionalTestCase
         // phpcs:disable SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly
         // Start Causal Consistency Example 2
         $s2 = $client->startSession(
-            [ 'causalConsistency' => true ]
+            ['causalConsistency' => true],
         );
         $s2->advanceClusterTime($s1->getClusterTime());
         $s2->advanceOperationTime($s1->getOperationTime());
@@ -1521,33 +1594,222 @@ class DocumentationExamplesTest extends FunctionalTestCase
         $items = $client->selectDatabase(
             'test',
             [
-                'readPreference' => new \MongoDB\Driver\ReadPreference(\MongoDB\Driver\ReadPreference::RP_SECONDARY),
+                'readPreference' => new \MongoDB\Driver\ReadPreference(\MongoDB\Driver\ReadPreference::SECONDARY),
                 'readConcern' => new \MongoDB\Driver\ReadConcern(\MongoDB\Driver\ReadConcern::MAJORITY),
                 'writeConcern' => new \MongoDB\Driver\WriteConcern(\MongoDB\Driver\WriteConcern::MAJORITY, 1000),
-            ]
+            ],
         )->items;
 
         $result = $items->find(
-            [ 'end' => [ '$exists' => false ] ],
-            [ 'session' => $s2 ]
+            ['end' => ['$exists' => false]],
+            ['session' => $s2],
         );
         foreach ($result as $item) {
             var_dump($item);
         }
+
         // End Causal Consistency Example 2
         // phpcs:enable
 
         ob_end_clean();
     }
 
-    /**
-     * @doesNotPerformAssertions
-     */
-    public function testWithTransactionExample()
+    public function testSnapshotQueries(): void
+    {
+        $this->skipIfServerVersion('<', '5.0.0', 'Snapshot queries outside of transactions are not supported');
+
+        if ($this->isStandalone()) {
+            $this->markTestSkipped('Snapshot read concern is only supported with replicasets');
+        }
+
+        $catsCollection = $this->dropCollection('pets', 'cats');
+        $catsCollection->insertMany([
+            ['name' => 'Whiskers', 'color' => 'white', 'adoptable' => true],
+            ['name' => 'Garfield', 'color' => 'orange', 'adoptable' => false],
+        ]);
+
+        $dogsCollection = $this->dropCollection('pets', 'dogs');
+        $dogsCollection->insertMany([
+            ['name' => 'Toto', 'color' => 'black',  'adoptable' => true],
+            ['name' => 'Milo', 'color' => 'black', 'adoptable' => false],
+            ['name' => 'Brian', 'color' => 'white', 'adoptable' => true],
+        ]);
+
+        if ($this->isShardedCluster()) {
+            $this->preventStaleDbVersionError('pets', 'cats');
+            $this->preventStaleDbVersionError('pets', 'dogs');
+        } else {
+            $this->waitForSnapshot('pets', 'cats');
+            $this->waitForSnapshot('pets', 'dogs');
+        }
+
+        $client = static::createTestClient();
+
+        ob_start();
+
+        // Start Snapshot Query Example 1
+        $catsCollection = $client->selectCollection('pets', 'cats');
+        $dogsCollection = $client->selectCollection('pets', 'dogs');
+
+        $session = $client->startSession(['snapshot' => true]);
+
+        $adoptablePetsCount = $catsCollection->aggregate(
+            [
+                ['$match' => ['adoptable' => true]],
+                ['$count' => 'adoptableCatsCount'],
+            ],
+            ['session' => $session],
+        )->toArray()[0]->adoptableCatsCount;
+
+        $adoptablePetsCount += $dogsCollection->aggregate(
+            [
+                ['$match' => ['adoptable' => true]],
+                ['$count' => 'adoptableDogsCount'],
+            ],
+            ['session' => $session],
+        )->toArray()[0]->adoptableDogsCount;
+
+        var_dump($adoptablePetsCount);
+        // End Snapshot Query Example 1
+
+        ob_end_clean();
+
+        $this->assertSame(3, $adoptablePetsCount);
+
+        $salesCollection = $this->dropCollection('retail', 'sales');
+        $salesCollection->insertMany([
+            ['shoeType' => 'boot', 'price' => 30, 'saleDate' => new UTCDateTime()],
+        ]);
+
+        if ($this->isShardedCluster()) {
+            $this->preventStaleDbVersionError('retail', 'sales');
+        } else {
+            $this->waitForSnapshot('retail', 'sales');
+        }
+
+        // Start Snapshot Query Example 2
+        $salesCollection = $client->selectCollection('retail', 'sales');
+
+        $session = $client->startSession(['snapshot' => true]);
+
+        $totalDailySales = $salesCollection->aggregate(
+            [
+                [
+                    '$match' => [
+                        '$expr' => [
+                            '$gt' => ['$saleDate', [
+                                '$dateSubtract' => [
+                                    'startDate' => '$$NOW',
+                                    'unit' => 'day',
+                                    'amount' => 1,
+                                ],
+                            ],
+                            ],
+                        ],
+                    ],
+                ],
+                ['$count' => 'totalDailySales'],
+            ],
+            ['session' => $session],
+        )->toArray()[0]->totalDailySales;
+        // End Snapshot Query Example 2
+
+        $this->assertSame(1, $totalDailySales);
+    }
+
+    #[DoesNotPerformAssertions]
+    public function testVersionedApi(): void
+    {
+        $uriString = static::getUri(true);
+
+        // phpcs:disable SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly
+        // Start Versioned API Example 1
+        $serverApi = new \MongoDB\Driver\ServerApi('1');
+        $client = new \MongoDB\Client($uriString, [], ['serverApi' => $serverApi]);
+        // End Versioned API Example 1
+
+        // Start Versioned API Example 2
+        $serverApi = new \MongoDB\Driver\ServerApi('1', true);
+        $client = new \MongoDB\Client($uriString, [], ['serverApi' => $serverApi]);
+        // End Versioned API Example 2
+
+        // Start Versioned API Example 3
+        $serverApi = new \MongoDB\Driver\ServerApi('1', false);
+        $client = new \MongoDB\Client($uriString, [], ['serverApi' => $serverApi]);
+        // End Versioned API Example 3
+
+        // Start Versioned API Example 4
+        $serverApi = new \MongoDB\Driver\ServerApi('1', false, true);
+        $client = new \MongoDB\Client($uriString, [], ['serverApi' => $serverApi]);
+        // End Versioned API Example 4
+        // phpcs:enable
+    }
+
+    public function testVersionedApiMigration(): void
+    {
+        $this->skipIfServerVersion('<', '5.0.0', 'Versioned API is not supported');
+        $this->skipIfServerVersion('>=', '5.0.9', 'The count command was added to API version 1 (SERVER-63850)');
+
+        $this->dropCollection($this->getDatabaseName(), 'sales');
+        $uriString = static::getUri(true);
+
+        // phpcs:disable SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly
+        $serverApi = new \MongoDB\Driver\ServerApi('1', true);
+        $client = new \MongoDB\Client($uriString, [], ['serverApi' => $serverApi]);
+        $db = $client->selectDatabase($this->getDatabaseName());
+
+        // Start Versioned API Example 5
+        $strtoutc = fn (string $datetime) => new \MongoDB\BSON\UTCDateTime(new \DateTime($datetime));
+
+        $db->sales->insertMany([
+            ['_id' => 1, 'item' => 'abc', 'price' => 10, 'quantity' => 2, 'date' => $strtoutc('2021-01-01T08:00:00Z')],
+            ['_id' => 2, 'item' => 'jkl', 'price' => 20, 'quantity' => 1, 'date' => $strtoutc('2021-02-03T09:00:00Z')],
+            ['_id' => 3, 'item' => 'xyz', 'price' => 5, 'quantity' => 5, 'date' => $strtoutc('2021-02-03T09:05:00Z')],
+            ['_id' => 4, 'item' => 'abc', 'price' => 10, 'quantity' => 10, 'date' => $strtoutc('2021-02-15T08:00:00Z')],
+            ['_id' => 5, 'item' => 'xyz', 'price' => 5, 'quantity' => 10, 'date' => $strtoutc('2021-02-15T09:05:00Z')],
+            ['_id' => 6, 'item' => 'xyz', 'price' => 5, 'quantity' => 5, 'date' => $strtoutc('2021-02-15T12:05:10Z')],
+            ['_id' => 7, 'item' => 'xyz', 'price' => 5, 'quantity' => 10, 'date' => $strtoutc('2021-02-15T14:12:12Z')],
+            ['_id' => 8, 'item' => 'abc', 'price' => 10, 'quantity' => 5, 'date' => $strtoutc('2021-03-16T20:20:13Z')],
+        ]);
+        // End Versioned API Example 5
+
+        ob_start();
+
+        // Start Versioned API Example 6
+        try {
+            $count = $db->sales->count();
+        } catch (\MongoDB\Driver\Exception\CommandException $e) {
+            echo json_encode($e->getResultDocument());
+            // { "ok": 0, "errmsg": "Provided apiStrict:true, but the command count is not in API Version 1", "code": 323, "codeName": "APIStrictError" }
+        }
+
+        // End Versioned API Example 6
+
+        ob_end_clean();
+
+        $this->assertStringContainsString('Provided apiStrict:true, but the command count is not in API Version 1', $e->getMessage());
+        $this->assertEquals(323 /* APIStrictError */, $e->getCode());
+
+        // Start Versioned API Example 7
+        $count = $db->sales->countDocuments();
+        // End Versioned API Example 7
+
+        $this->assertSame($count, $db->sales->countDocuments());
+
+        // Start Versioned API Example 8
+        // 8
+        // End Versioned API Example 8
+        // phpcs:enable
+    }
+
+    #[DoesNotPerformAssertions]
+    public function testWithTransactionExample(): void
     {
         $this->skipIfTransactionsAreNotSupported();
 
         $uriString = static::getUri(true);
+        $this->dropCollection('mydb1', 'foo');
+        $this->dropCollection('mydb2', 'bar');
 
         // phpcs:disable SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly
         // Start Transactions withTxn API Example 1
@@ -1560,13 +1822,13 @@ class DocumentationExamplesTest extends FunctionalTestCase
 
         $client = new \MongoDB\Client($uriString);
 
-        // Prerequisite: Create collections. CRUD operations in transactions must be on existing collections.
+        // Prerequisite: Create collections.
         $client->selectCollection(
             'mydb1',
             'foo',
             [
                 'writeConcern' => new \MongoDB\Driver\WriteConcern(\MongoDB\Driver\WriteConcern::MAJORITY, 1000),
-            ]
+            ],
         )->insertOne(['abc' => 0]);
 
         $client->selectCollection(
@@ -1574,12 +1836,12 @@ class DocumentationExamplesTest extends FunctionalTestCase
             'bar',
             [
                 'writeConcern' => new \MongoDB\Driver\WriteConcern(\MongoDB\Driver\WriteConcern::MAJORITY, 1000),
-            ]
+            ],
         )->insertOne(['xyz' => 0]);
 
         // Step 1: Define the callback that specifies the sequence of operations to perform inside the transactions.
 
-        $callback = function (\MongoDB\Driver\Session $session) use ($client) {
+        $callback = function (\MongoDB\Driver\Session $session) use ($client): void {
             $client
                 ->selectCollection('mydb1', 'foo')
                 ->insertOne(['abc' => 1], ['session' => $session]);
@@ -1595,35 +1857,149 @@ class DocumentationExamplesTest extends FunctionalTestCase
 
         // Step 3: Use with_transaction to start a transaction, execute the callback, and commit (or abort on error).
 
-        $transactionOptions = [
-            'readConcern' => new \MongoDB\Driver\ReadConcern(\MongoDB\Driver\ReadConcern::LOCAL),
-            'writeConcern' => new \MongoDB\Driver\WriteConcern(\MongoDB\Driver\WriteConcern::MAJORITY, 1000),
-            'readPreference' => new \MongoDB\Driver\ReadPreference(\MongoDB\Driver\ReadPreference::RP_PRIMARY),
-        ];
-
-        \MongoDB\with_transaction($session, $callback, $transactionOptions);
+        \MongoDB\with_transaction($session, $callback);
 
         // End Transactions withTxn API Example 1
         // phpcs:enable
     }
 
     /**
-     * Return the test collection name.
+     * Queryable encryption examples (not parsed for server manual includes).
      *
-     * @return string
+     * @see https://jira.mongodb.org/browse/PHPLIB-863
+     * @see ClientSideEncryptionSpecTest::testExplicitEncryption
      */
-    protected function getCollectionName()
+    public function testQueryableEncryption(): void
     {
-        return 'inventory';
+        if ($this->isStandalone()) {
+            $this->markTestSkipped('Queryable encryption requires replica sets');
+        }
+
+        $this->skipIfServerVersion('<', '7.0.0', 'Explicit encryption tests require MongoDB 7.0 or later');
+        $this->skipIfClientSideEncryptionIsNotSupported();
+
+        // Fetch names for the database and collection under test
+        $collectionName = $this->getCollectionName();
+        $databaseName = $this->getDatabaseName();
+        $namespace = $this->getNamespace();
+
+        /* Create a client without auto encryption. Drop existing data in both the
+         * keyvault and the collection under test, the "encryptedFields" option
+         * is necessary to clean up any internal collections for queryable
+         * encryption, assuming they use their default names */
+        $client = static::createTestClient();
+        $this->dropCollection('keyvault', 'datakeys');
+        $this->dropCollection($databaseName, $collectionName, ['encryptedFields' => []]);
+
+        /* Although ClientEncryption can be constructed directly, the library
+         * provides a helper to do so. With this method, the keyVaultClient will
+         * default to the same client. */
+        $clientEncryption = $client->createClientEncryption([
+            'keyVaultNamespace' => 'keyvault.datakeys',
+            'kmsProviders' => ['local' => ['key' => new Binary(base64_decode(ClientSideEncryptionSpecTest::LOCAL_MASTERKEY))]],
+        ]);
+
+        // Create two data keys, one for each encrypted field
+        $dataKeyId1 = $clientEncryption->createDataKey('local');
+        $dataKeyId2 = $clientEncryption->createDataKey('local');
+
+        $autoEncryptionOpts = [
+            'keyVaultNamespace' => 'keyvault.datakeys',
+            'kmsProviders' => ['local' => ['key' => new Binary(base64_decode(ClientSideEncryptionSpecTest::LOCAL_MASTERKEY))]],
+            'encryptedFieldsMap' => [
+                $namespace => [
+                    'fields' => [
+                        [
+                            'path' => 'encryptedIndexed',
+                            'bsonType' => 'string',
+                            'keyId' => $dataKeyId1,
+                            'queries' => ['queryType' => 'equality'],
+                        ],
+                        [
+                            'path' => 'encryptedUnindexed',
+                            'bsonType' => 'string',
+                            'keyId' => $dataKeyId2,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $encryptedClient = static::createTestClient(null, [], ['autoEncryption' => $autoEncryptionOpts]);
+
+        /* Create the collection under test. The createCollection() helper will
+         * reference the client's encryptedFieldsMap and create additional,
+         * internal collections automatically. */
+        $encryptedClient->selectDatabase($databaseName)->createCollection($collectionName);
+        $encryptedCollection = $encryptedClient->selectCollection($databaseName, $collectionName);
+
+        /* Using a client with auto encryption, insert a document with encrypted
+         * fields and assert that those fields are automatically decrypted when
+         * querying. */
+        $indexedValue = 'indexedValue';
+        $unindexedValue = 'unindexedValue';
+
+        $encryptedCollection->insertOne([
+            '_id' => 1,
+            'encryptedIndexed' => $indexedValue,
+            'encryptedUnindexed' => $unindexedValue,
+        ]);
+
+        $result = $encryptedCollection->findOne(['encryptedIndexed' => $indexedValue]);
+
+        $this->assertSame(1, $result['_id']);
+        $this->assertSame($indexedValue, $result['encryptedIndexed']);
+        $this->assertSame($unindexedValue, $result['encryptedUnindexed']);
+
+        /* Using a client without auto encryption, query for the same
+         * document and assert that encrypted data is returned. */
+        $unencryptedClient = static::createTestClient();
+        $unencryptedCollection = $unencryptedClient->selectCollection($databaseName, $collectionName);
+
+        $result = $unencryptedCollection->findOne(['_id' => 1]);
+
+        $this->assertSame(1, $result['_id']);
+        $this->assertInstanceOf(Binary::class, $result['encryptedIndexed']);
+        $this->assertInstanceOf(Binary::class, $result['encryptedUnindexed']);
     }
 
-    private function assertCursorCount($count, Cursor $cursor)
+    private function assertCursorCount($count, Cursor $cursor): void
     {
         $this->assertCount($count, $cursor->toArray());
     }
 
-    private function assertInventoryCount($count)
+    private function assertInventoryCount($count): void
     {
-        $this->assertCollectionCount($this->getDatabaseName() . '.' . $this->getCollectionName(), $count);
+        $this->assertCollectionCount($this->getDatabaseName() . '.inventory', $count);
+    }
+
+    private function waitForSnapshot(string $databaseName, string $collectionName): void
+    {
+        $collection = new Collection($this->manager, $databaseName, $collectionName);
+        $session = $this->manager->startSession(['snapshot' => true]);
+
+        // Retry until a snapshot query succeeds or ten seconds elapse.
+        $retryUntil = microtime(true) + 10;
+
+        do {
+            try {
+                if ($collection->findOne([], ['session' => $session]) !== null) {
+                    break;
+                }
+            } catch (CommandException $e) {
+                if ($e->getCode() !== 246 /* SnapshotUnavailable */) {
+                    throw $e;
+                }
+            }
+
+            usleep(1000);
+        } while (microtime(true) < $retryUntil);
+    }
+
+    /** @see https://jira.mongodb.org/browse/SERVER-39704 */
+    private function preventStaleDbVersionError(string $databaseName, string $collectionName): void
+    {
+        $collection = new Collection($this->manager, $databaseName, $collectionName);
+        $collection->distinct('foo');
     }
 }

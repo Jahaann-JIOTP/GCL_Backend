@@ -3,22 +3,22 @@
 namespace MongoDB\Tests\SpecTests;
 
 use ArrayIterator;
-use IteratorIterator;
 use LogicException;
+use MongoDB\BSON\Document;
 use MongoDB\Collection;
 use MongoDB\Driver\Server;
 use MongoDB\Tests\FunctionalTestCase as BaseFunctionalTestCase;
 use MultipleIterator;
 use PHPUnit\Framework\SkippedTest;
 use stdClass;
-use Symfony\Bridge\PhpUnit\SetUpTearDownTrait;
 use UnexpectedValueException;
+
 use function in_array;
 use function json_encode;
-use function MongoDB\BSON\fromJSON;
-use function MongoDB\BSON\toPHP;
 use function sprintf;
 use function version_compare;
+
+use const JSON_THROW_ON_ERROR;
 
 /**
  * Base class for spec test runners.
@@ -27,23 +27,25 @@ use function version_compare;
  */
 class FunctionalTestCase extends BaseFunctionalTestCase
 {
-    use SetUpTearDownTrait;
+    public const TOPOLOGY_SINGLE = 'single';
+    public const TOPOLOGY_REPLICASET = 'replicaset';
+    public const TOPOLOGY_SHARDED = 'sharded';
+    public const TOPOLOGY_LOAD_BALANCED = 'load-balanced';
 
-    const TOPOLOGY_SINGLE = 'single';
-    const TOPOLOGY_REPLICASET = 'replicaset';
-    const TOPOLOGY_SHARDED = 'sharded';
+    public const SERVERLESS_ALLOW = 'allow';
+    public const SERVERLESS_FORBID = 'forbid';
+    public const SERVERLESS_REQUIRE = 'require';
 
-    /** @var Context|null */
-    private $context;
+    private ?Context $context = null;
 
-    private function doSetUp()
+    public function setUp(): void
     {
         parent::setUp();
 
         $this->context = null;
     }
 
-    private function doTearDown()
+    public function tearDown(): void
     {
         $this->context = null;
 
@@ -59,7 +61,7 @@ class FunctionalTestCase extends BaseFunctionalTestCase
      * @param stdClass $expectedCommand Expected command document
      * @param stdClass $actualCommand   Actual command document
      */
-    public static function assertCommandMatches(stdClass $expected, stdClass $actual)
+    public static function assertCommandMatches(stdClass $expected, stdClass $actual): void
     {
         throw new LogicException(sprintf('%s does not assert CommandStartedEvents', static::class));
     }
@@ -73,7 +75,7 @@ class FunctionalTestCase extends BaseFunctionalTestCase
      * @param stdClass $expected Expected command reply document
      * @param stdClass $actual   Actual command reply document
      */
-    public static function assertCommandReplyMatches(stdClass $expected, stdClass $actual)
+    public static function assertCommandReplyMatches(stdClass $expected, stdClass $actual): void
     {
         throw new LogicException(sprintf('%s does not assert CommandSucceededEvents', static::class));
     }
@@ -82,12 +84,8 @@ class FunctionalTestCase extends BaseFunctionalTestCase
      * Asserts that two given documents match.
      *
      * Extra keys in the actual value's document(s) will be ignored.
-     *
-     * @param array|object $expectedDocument
-     * @param array|object $actualDocument
-     * @param string       $message
      */
-    protected static function assertDocumentsMatch($expectedDocument, $actualDocument, $message = '')
+    public static function assertDocumentsMatch(array|object $expectedDocument, array|object $actualDocument, string $message = ''): void
     {
         $constraint = new DocumentsMatchConstraint($expectedDocument, true, true);
 
@@ -95,41 +93,61 @@ class FunctionalTestCase extends BaseFunctionalTestCase
     }
 
     /**
-     * Assert data within the outcome collection.
+     * Assert omitted top-level fields in command documents.
      *
-     * @param array $expectedDocuments
+     * Note: this method may modify the $expected object.
+     *
+     * @see https://github.com/mongodb/specifications/blob/master/source/transactions/tests/README.rst#null-values
+     * @see https://github.com/mongodb/specifications/blob/09ee1ebc481f1502e3246971a9419e484d736207/source/command-monitoring/tests/README.rst#additional-values
      */
-    protected function assertOutcomeCollectionData(array $expectedDocuments)
+    protected static function assertCommandOmittedFields(stdClass $expected, stdClass $actual): void
     {
-        $outcomeCollection = $this->getOutcomeCollection();
-        $findOptions = $this->getContext()->outcomeFindOptions;
+        foreach ($expected as $key => $value) {
+            if ($value === null) {
+                static::assertObjectNotHasProperty($key, $actual);
+                unset($expected->{$key});
+            }
+        }
+    }
+
+    /**
+     * Assert data within the outcome collection.
+     */
+    protected function assertOutcomeCollectionData(array $expectedDocuments, int $resultExpectation = ResultExpectation::ASSERT_SAME_DOCUMENT): void
+    {
+        $outcomeCollection = $this->getOutcomeCollection($this->getContext()->outcomeReadOptions);
 
         $mi = new MultipleIterator(MultipleIterator::MIT_NEED_ANY);
         $mi->attachIterator(new ArrayIterator($expectedDocuments));
-        $mi->attachIterator(new IteratorIterator($outcomeCollection->find([], $findOptions)));
+        $mi->attachIterator($outcomeCollection->find([], ['sort' => ['_id' => 1]]));
 
         foreach ($mi as $documents) {
-            list($expectedDocument, $actualDocument) = $documents;
+            [$expectedDocument, $actualDocument] = $documents;
             $this->assertNotNull($expectedDocument);
             $this->assertNotNull($actualDocument);
-            $this->assertSameDocument($expectedDocument, $actualDocument);
+
+            match ($resultExpectation) {
+                ResultExpectation::ASSERT_SAME_DOCUMENT => $this->assertSameDocument($expectedDocument, $actualDocument),
+                ResultExpectation::ASSERT_DOCUMENTS_MATCH => $this->assertDocumentsMatch($expectedDocument, $actualDocument),
+                default => $this->fail(sprintf('Invalid result expectation "%d" for %s', $resultExpectation, __METHOD__)),
+            };
         }
     }
 
     /**
      * Checks server version and topology requirements.
      *
-     * @param array $runOn
      * @throws SkippedTest if the server requirements are not met
      */
-    protected function checkServerRequirements(array $runOn)
+    protected function checkServerRequirements(array $runOn): void
     {
         foreach ($runOn as $req) {
-            $minServerVersion = isset($req->minServerVersion) ? $req->minServerVersion : null;
-            $maxServerVersion = isset($req->maxServerVersion) ? $req->maxServerVersion : null;
-            $topologies = isset($req->topology) ? $req->topology : null;
+            $minServerVersion = $req->minServerVersion ?? null;
+            $maxServerVersion = $req->maxServerVersion ?? null;
+            $topologies = $req->topology ?? null;
+            $serverlessMode = $req->serverless ?? null;
 
-            if ($this->isServerRequirementSatisifed($minServerVersion, $maxServerVersion, $topologies)) {
+            if ($this->isServerRequirementSatisifed($minServerVersion, $maxServerVersion, $topologies, $serverlessMode)) {
                 return;
             }
         }
@@ -137,7 +155,7 @@ class FunctionalTestCase extends BaseFunctionalTestCase
         $serverVersion = $this->getServerVersion();
         $topology = $this->getTopology();
 
-        $this->markTestSkipped(sprintf('Server version "%s" and topology "%s" do not meet test requirements: %s', $serverVersion, $topology, json_encode($runOn)));
+        $this->markTestSkipped(sprintf('Server version "%s" and topology "%s" do not meet test requirements: %s', $serverVersion, $topology, json_encode($runOn, JSON_THROW_ON_ERROR)));
     }
 
     /**
@@ -145,22 +163,18 @@ class FunctionalTestCase extends BaseFunctionalTestCase
      *
      * This decodes the file through the driver's extended JSON parser to ensure
      * proper handling of special types.
-     *
-     * @param string $json
-     * @return array
      */
-    protected function decodeJson($json)
+    protected function decodeJson(string $json): array|object
     {
-        return toPHP(fromJSON($json));
+        return Document::fromJSON($json)->toPHP();
     }
 
     /**
      * Return the test context.
      *
-     * @return Context
      * @throws LogicException if the context has not been set
      */
-    protected function getContext()
+    protected function getContext(): Context
     {
         if (! $this->context instanceof Context) {
             throw new LogicException('Context has not been set');
@@ -171,10 +185,8 @@ class FunctionalTestCase extends BaseFunctionalTestCase
 
     /**
      * Set the test context.
-     *
-     * @param Context $context
      */
-    protected function setContext(Context $context)
+    protected function setContext(Context $context): void
     {
         $this->context = $context;
     }
@@ -182,9 +194,13 @@ class FunctionalTestCase extends BaseFunctionalTestCase
     /**
      * Drop the test and outcome collections by dropping them.
      */
-    protected function dropTestAndOutcomeCollections()
+    protected function dropTestAndOutcomeCollections(array $testCollectionDropOptions = []): void
     {
         $context = $this->getContext();
+
+        if ($context->databaseName === 'admin') {
+            return;
+        }
 
         if ($context->bucketName !== null) {
             $bucket = $context->getGridFSBucket($context->defaultWriteOptions);
@@ -193,27 +209,24 @@ class FunctionalTestCase extends BaseFunctionalTestCase
 
         $collection = null;
         if ($context->collectionName !== null) {
-            $collection = $context->getCollection();
-            $collection->drop($context->defaultWriteOptions);
+            $collection = $context->getCollection($context->defaultWriteOptions);
+            $collection->drop($testCollectionDropOptions);
         }
 
         if ($context->outcomeCollectionName !== null) {
-            $outcomeCollection = $this->getOutcomeCollection();
+            $outcomeCollection = $this->getOutcomeCollection($context->defaultWriteOptions);
 
             // Avoid redundant drop if the test and outcome collections are the same
             if ($collection === null || $outcomeCollection->getNamespace() !== $collection->getNamespace()) {
-                $outcomeCollection->drop($context->defaultWriteOptions);
+                $outcomeCollection->drop();
             }
         }
     }
 
     /**
      * Insert data fixtures into the test collection.
-     *
-     * @param array       $documents
-     * @param string|null $collectionName
      */
-    protected function insertDataFixtures(array $documents, $collectionName = null)
+    protected function insertDataFixtures(array $documents, ?string $collectionName = null): void
     {
         if (empty($documents)) {
             return;
@@ -221,31 +234,32 @@ class FunctionalTestCase extends BaseFunctionalTestCase
 
         $context = $this->getContext();
         $collection = $collectionName ? $context->selectCollection($context->databaseName, $collectionName) : $context->getCollection();
+
         $collection->insertMany($documents, $context->defaultWriteOptions);
 
         return;
     }
 
-    private function getOutcomeCollection()
+    private function getOutcomeCollection(array $collectionOptions = [])
     {
         $context = $this->getContext();
 
         // Outcome collection need not use the client under test
-        return new Collection($this->manager, $context->databaseName, $context->outcomeCollectionName);
+        return new Collection($this->manager, $context->databaseName, $context->outcomeCollectionName, $collectionOptions);
     }
 
     /**
      * Return the corresponding topology constants for the current topology.
      *
-     * @return string
      * @throws UnexpectedValueException if topology is neither single nor RS nor sharded
      */
-    private function getTopology()
+    private function getTopology(): string
     {
         $topologyTypeMap = [
             Server::TYPE_STANDALONE => self::TOPOLOGY_SINGLE,
             Server::TYPE_RS_PRIMARY => self::TOPOLOGY_REPLICASET,
             Server::TYPE_MONGOS => self::TOPOLOGY_SHARDED,
+            Server::TYPE_LOAD_BALANCER => self::TOPOLOGY_LOAD_BALANCED,
         ];
 
         $primaryType = $this->getPrimaryServer()->getType();
@@ -254,18 +268,27 @@ class FunctionalTestCase extends BaseFunctionalTestCase
             return $topologyTypeMap[$primaryType];
         }
 
-        throw new UnexpectedValueException('Toplogy is neither single nor RS nor sharded');
+        throw new UnexpectedValueException(sprintf('Cannot find topology for primary of type "%d".', $primaryType));
+    }
+
+    private function isServerlessRequirementSatisfied(?string $serverlessMode): bool
+    {
+        if ($serverlessMode === null) {
+            return true;
+        }
+
+        return match ($serverlessMode) {
+            self::SERVERLESS_ALLOW => true,
+            self::SERVERLESS_FORBID => ! static::isServerless(),
+            self::SERVERLESS_REQUIRE => static::isServerless(),
+            default => throw new UnexpectedValueException(sprintf('Invalid serverless requirement "%s" found.', $serverlessMode)),
+        };
     }
 
     /**
      * Checks if server version and topology requirements are satifised.
-     *
-     * @param string|null $minServerVersion
-     * @param string|null $maxServerVersion
-     * @param array|null  $topologies
-     * @return boolean
      */
-    private function isServerRequirementSatisifed($minServerVersion, $maxServerVersion, array $topologies = null)
+    private function isServerRequirementSatisifed(?string $minServerVersion, ?string $maxServerVersion, ?array $topologies = null, ?string $serverlessMode = null): bool
     {
         $serverVersion = $this->getServerVersion();
 
@@ -280,6 +303,10 @@ class FunctionalTestCase extends BaseFunctionalTestCase
         $topology = $this->getTopology();
 
         if (isset($topologies) && ! in_array($topology, $topologies)) {
+            return false;
+        }
+
+        if (! $this->isServerlessRequirementSatisfied($serverlessMode)) {
             return false;
         }
 

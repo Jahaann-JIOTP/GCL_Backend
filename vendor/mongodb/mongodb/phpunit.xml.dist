@@ -7,16 +7,19 @@
          beStrictAboutChangesToGlobalState="true"
          colors="true"
          bootstrap="tests/bootstrap.php"
+         defaultTestSuite="Default Test Suite"
 >
 
     <php>
+        <ini name="assert.exception" value="1"/>
         <ini name="error_reporting" value="-1"/>
+        <ini name="zend.assertions" value="1"/>
         <env name="MONGODB_URI" value="mongodb://127.0.0.1:27017/?serverSelectionTimeoutMS=100"/>
         <env name="MONGODB_DATABASE" value="phplib_test"/>
     </php>
 
     <testsuites>
-        <testsuite name="MongoDB CRUD Test Suite">
+        <testsuite name="Default Test Suite">
             <directory>./tests/</directory>
         </testsuite>
     </testsuites>
