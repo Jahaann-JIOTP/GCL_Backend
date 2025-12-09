@@ -3,7 +3,7 @@ header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
 
 // Fetch data from the source API
-$url = "http://13.234.241.103:1880/latestgcl1";
+$url = "http://43.204.118.114:6881/latestgcl1";
 $json = file_get_contents($url);
 
 if ($json === false) {
